@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Build output
+frontend/.next/
+frontend/out/
+frontend-admin/dist/
+backend/bin/
+backend/tmp/
+*.exe
+
+# Go
+/vendor/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
