@@ -1,0 +1,165 @@
+'use client';
+import React, { useRef, useState, useEffect } from 'react';
+import { useMutation } from '@tanstack/react-query';
+import WorkspaceLayout from '../../components/layout/WorkspaceLayout';
+import { aiApi, type ChatTurn } from '../../lib/api';
+import { Bot, Send, User, Sparkles, Cpu, Cloud, CircleOff } from 'lucide-react';
+
+const SUGGESTIONS = [
+  'Give me a situation overview',
+  'What are the current critical threats?',
+  'Any open security incidents?',
+  'How many sensors are online?',
+];
+
+interface Msg extends ChatTurn {
+  source?: string;
+}
+
+function SourceBadge({ source }: { source: string }) {
+  const local = source.startsWith('local');
+  const claude = source === 'claude';
+  const Icon = local ? Cpu : claude ? Cloud : CircleOff;
+  const label = local ? source.replace('local:', 'local · ') : claude ? 'Claude' : 'offline';
+  const cls = local
+    ? 'text-emerald-400 border-emerald-500/30 bg-emerald-500/10'
+    : claude
+    ? 'text-violet-400 border-violet-500/30 bg-violet-500/10'
+    : 'text-gray-500 border-gray-700/40 bg-gray-500/10';
+  return (
+    <span className={`inline-flex items-center gap-1 text-[9px] font-mono px-1.5 py-0.5 rounded border ${cls}`}>
+      <Icon size={9} /> {label}
+    </span>
+  );
+}
+
+export default function AssistantPage() {
+  const [messages, setMessages] = useState<Msg[]>([]);
+  const [input, setInput] = useState('');
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  const chatM = useMutation({
+    mutationFn: (text: string) =>
+      aiApi.chat(
+        text,
+        messages.map((m) => ({ role: m.role, content: m.content })),
+      ),
+    onSuccess: (res) => {
+      setMessages((prev) => [...prev, { role: 'assistant', content: res.reply, source: res.source }]);
+    },
+    onError: () => {
+      setMessages((prev) => [...prev, { role: 'assistant', content: 'Assistant is unavailable right now.', source: 'simulated' }]);
+    },
+  });
+
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
+  }, [messages, chatM.isPending]);
+
+  const send = (text: string) => {
+    const t = text.trim();
+    if (!t || chatM.isPending) return;
+    setMessages((prev) => [...prev, { role: 'user', content: t }]);
+    setInput('');
+    chatM.mutate(t);
+  };
+
+  return (
+    <WorkspaceLayout>
+      <div className="h-full flex flex-col max-w-3xl mx-auto w-full">
+        {/* Header */}
+        <div className="px-6 pt-5 pb-3 border-b border-gray-800/60">
+          <h1 className="text-lg font-bold font-mono tracking-wide text-white uppercase flex items-center gap-2">
+            <Bot size={18} className="text-cyan-400" /> AI Analyst
+          </h1>
+          <p className="text-gray-500 text-xs font-mono mt-0.5">
+            Ask about entities, threats, sensors, incidents and the operating picture — grounded in live platform data.
+          </p>
+        </div>
+
+        {/* Messages */}
+        <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto px-6 py-5 space-y-4">
+          {messages.length === 0 && (
+            <div className="h-full flex flex-col items-center justify-center text-center gap-5">
+              <div className="w-14 h-14 rounded-2xl bg-cyan-600/15 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
+                <Sparkles size={26} />
+              </div>
+              <p className="text-sm text-gray-400 font-mono max-w-sm">
+                I&apos;m your intelligence analyst assistant. Try one of these:
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full max-w-lg">
+                {SUGGESTIONS.map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => send(s)}
+                    className="text-left text-xs font-mono text-gray-300 bg-[#0e1220]/60 border border-gray-800/60 hover:border-cyan-500/40 rounded-xl px-3 py-2.5 transition-all"
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {messages.map((m, i) => (
+            <div key={i} className={`flex gap-3 ${m.role === 'user' ? 'flex-row-reverse' : ''}`}>
+              <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 border ${
+                m.role === 'user' ? 'bg-gray-700/30 border-gray-600/40 text-gray-300' : 'bg-cyan-600/15 border-cyan-500/30 text-cyan-400'
+              }`}>
+                {m.role === 'user' ? <User size={15} /> : <Bot size={15} />}
+              </div>
+              <div className={`max-w-[80%] ${m.role === 'user' ? 'items-end' : 'items-start'} flex flex-col gap-1`}>
+                <div className={`rounded-2xl px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap ${
+                  m.role === 'user'
+                    ? 'bg-cyan-600/15 border border-cyan-500/20 text-gray-100'
+                    : 'bg-[#0e1220]/70 border border-gray-800/60 text-gray-200'
+                }`}>
+                  {m.content}
+                </div>
+                {m.role === 'assistant' && m.source && <SourceBadge source={m.source} />}
+              </div>
+            </div>
+          ))}
+
+          {chatM.isPending && (
+            <div className="flex gap-3">
+              <div className="w-8 h-8 rounded-xl bg-cyan-600/15 border border-cyan-500/30 text-cyan-400 flex items-center justify-center shrink-0">
+                <Bot size={15} />
+              </div>
+              <div className="bg-[#0e1220]/70 border border-gray-800/60 rounded-2xl px-4 py-3 flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" style={{ animationDelay: '0.15s' }} />
+                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" style={{ animationDelay: '0.3s' }} />
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Composer */}
+        <div className="px-6 pb-5 pt-3 border-t border-gray-800/60">
+          <form
+            onSubmit={(e) => { e.preventDefault(); send(input); }}
+            className="flex items-center gap-2 bg-[#0c0e17] border border-gray-800 rounded-2xl px-3 py-2 focus-within:border-cyan-500/50 transition-all"
+          >
+            <input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="Ask the analyst assistant…"
+              className="flex-1 bg-transparent text-sm text-gray-200 placeholder-gray-600 focus:outline-none font-mono"
+            />
+            <button
+              type="submit"
+              disabled={!input.trim() || chatM.isPending}
+              className="w-9 h-9 rounded-xl bg-cyan-600 text-white flex items-center justify-center disabled:opacity-40 hover:bg-cyan-500 transition-all"
+            >
+              <Send size={15} />
+            </button>
+          </form>
+          <p className="text-[10px] text-gray-600 font-mono mt-2 text-center">
+            Runs locally via Ollama if available, else Claude, else an offline data summarizer.
+          </p>
+        </div>
+      </div>
+    </WorkspaceLayout>
+  );
+}

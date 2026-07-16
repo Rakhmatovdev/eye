@@ -352,6 +352,24 @@ export const casesApi = {
   },
 };
 
+/* ---------------------------------- AI ----------------------------------- */
+
+export interface ChatTurn {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+export const aiApi = {
+  async chat(message: string, history: ChatTurn[] = [], context?: string): Promise<{ reply: string; source: string }> {
+    const res = await apiClient.post<Envelope<{ reply: string; source: string }>>('/ai/chat', {
+      message,
+      history,
+      context,
+    });
+    return unwrap(res.data);
+  },
+};
+
 export const timelineApi = {
   async list(params: { type?: string; entityId?: string } = {}): Promise<TimelineEvent[]> {
     const res = await apiClient.get<Envelope<BackendEvent[] | null>>('/timeline', {

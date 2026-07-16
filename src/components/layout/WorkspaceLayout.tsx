@@ -12,7 +12,8 @@ import {
   LogOut,
   ShieldAlert,
   Cctv,
-  Crosshair
+  Crosshair,
+  Bot
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 
@@ -38,6 +39,7 @@ export default function WorkspaceLayout({ children }: WorkspaceLayoutProps) {
     { name: 'Geospatial Map', path: '/map', icon: Map },
     { name: 'Surveillance', path: '/surveillance', icon: Cctv },
     { name: 'Command Post', path: '/command', icon: Crosshair },
+    { name: 'AI Analyst', path: '/assistant', icon: Bot },
     { name: 'Time Analysis', path: '/timeline', icon: Clock },
     { name: 'Case Files', path: '/cases', icon: FolderLock },
   ];
