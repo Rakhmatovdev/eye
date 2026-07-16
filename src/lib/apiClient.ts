@@ -1,7 +1,10 @@
 import axios from 'axios';
 import { useAuthStore } from '../store/authStore';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+// Empty by default so the base URL is relative (`/api/v1`) and requests go
+// same-origin through the Next.js rewrite proxy — no CORS. Override with an
+// absolute URL only if calling the backend directly cross-origin.
+const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
 // Shared axios instance. Base points at the versioned API so callers use
 // short paths like `/auth/login`, `/entities`, `/graph/expand`.

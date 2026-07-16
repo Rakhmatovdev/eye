@@ -1,6 +1,8 @@
 import apiClient, { unwrap, type Envelope } from './apiClient';
 import type { Entity, EntityType, ClassificationLevel } from '../data/mockEntities';
 import type { Relationship } from '../data/mockRelationships';
+import type { TimelineEvent } from '../data/mockEvents';
+import type { Case } from '../data/mockCases';
 import type { AuthUser } from '../store/authStore';
 
 /* ----------------------------- Backend shapes ---------------------------- */
@@ -44,6 +46,16 @@ interface BackendRelationship {
 interface GraphData {
   nodes: BackendEntity[] | null;
   edges: BackendRelationship[] | null;
+}
+
+interface BackendEvent {
+  id: string;
+  timestamp: string;
+  entity_id: string;
+  title: string;
+  description: string;
+  type: string;
+  location: string;
 }
 
 /* ------------------------------- Mappers --------------------------------- */
@@ -96,11 +108,17 @@ export function mapEntity(e: BackendEntity): Entity {
       ? { lat: Number(lat), lng: Number(lng), address: asString(props.address) }
       : undefined;
 
-  // Keep only primitive props for the flat `properties` map the UI renders.
+  // Keep only primitive props for the flat `properties` map the UI renders,
+  // excluding keys already surfaced as dedicated fields (name/geo/tags/risk) so
+  // the attributes list doesn't redundantly repeat them.
+  const EXTRACTED = new Set([
+    'name', 'label', 'title', 'tags', 'lat', 'lng', 'latitude', 'longitude', 'address', 'risk_score',
+  ]);
   const flatProps: Record<string, string | number | boolean> = {};
   for (const [k, v] of Object.entries(props)) {
     if (v == null) continue;
     if (typeof v === 'object') continue;
+    if (EXTRACTED.has(k)) continue;
     flatProps[k] = v as string | number | boolean;
   }
 
@@ -117,6 +135,18 @@ export function mapEntity(e: BackendEntity): Entity {
     properties: flatProps,
     geo,
     case_ids: [],
+  };
+}
+
+export function mapEvent(e: BackendEvent): TimelineEvent {
+  return {
+    id: e.id,
+    timestamp: e.timestamp,
+    entity_id: e.entity_id,
+    title: e.title,
+    description: e.description,
+    type: e.type,
+    location: e.location || undefined,
   };
 }
 
@@ -183,6 +213,154 @@ export const entitiesApi = {
       nodes: (data.nodes || []).map(mapEntity),
       edges: (data.edges || []).map(mapRelationship),
     };
+  },
+};
+
+/* ------------------------------- Sensors --------------------------------- */
+
+export interface Sensor {
+  id: string;
+  name: string;
+  type: string;
+  status: string;
+  lat: number;
+  lng: number;
+  area: string;
+  coverage_radius: number;
+  resolution: string;
+  classification: string;
+  feed_url: string;
+  last_heartbeat: string;
+}
+
+export interface Detection {
+  id: string;
+  sensor_id: string;
+  sensor_name: string;
+  entity_id: string;
+  entity_name: string;
+  kind: string;
+  confidence: number;
+  lat: number;
+  lng: number;
+  area: string;
+  timestamp: string;
+}
+
+export interface SensorStats {
+  total: number;
+  online: number;
+  degraded: number;
+  offline: number;
+  detections_24h: number;
+  identified_hits: number;
+}
+
+export const sensorsApi = {
+  async list(params: { type?: string; status?: string } = {}): Promise<Sensor[]> {
+    const res = await apiClient.get<Envelope<Sensor[] | null>>('/sensors', {
+      params: {
+        type: params.type && params.type !== 'all' ? params.type : undefined,
+        status: params.status && params.status !== 'all' ? params.status : undefined,
+      },
+    });
+    return unwrap(res.data) || [];
+  },
+  async detections(params: { sensorId?: string; entityId?: string; limit?: number } = {}): Promise<Detection[]> {
+    const res = await apiClient.get<Envelope<Detection[] | null>>('/sensors/detections', {
+      params: { sensor_id: params.sensorId, entity_id: params.entityId, limit: params.limit },
+    });
+    return unwrap(res.data) || [];
+  },
+  async stats(): Promise<SensorStats> {
+    const res = await apiClient.get<Envelope<SensorStats>>('/sensors/stats');
+    return unwrap(res.data);
+  },
+};
+
+/* ------------------------------- Military -------------------------------- */
+
+export interface Unit {
+  id: string; callsign: string; name: string; type: string; domain: string;
+  status: string; readiness: string; lat: number; lng: number;
+  strength: number; heading: number; speed: number; updated_at: string;
+}
+export interface Threat {
+  id: string; designation: string; type: string; classification: string;
+  threat_level: string; lat: number; lng: number; heading: number; speed: number;
+  confidence: number; entity_id: string; last_seen: string;
+}
+export interface Mission {
+  id: string; name: string; status: string; priority: string; objective: string;
+  area: string; assigned_units: string[]; progress: number; starts_at: string; updated_at: string;
+}
+export interface MilitaryStats {
+  units: number; units_ready: number; threats: number; critical_threats: number; active_missions: number;
+}
+
+export const militaryApi = {
+  async units(): Promise<Unit[]> {
+    const res = await apiClient.get<Envelope<Unit[] | null>>('/military/units');
+    return unwrap(res.data) || [];
+  },
+  async threats(classification?: string): Promise<Threat[]> {
+    const res = await apiClient.get<Envelope<Threat[] | null>>('/military/threats', {
+      params: { classification: classification && classification !== 'all' ? classification : undefined },
+    });
+    return unwrap(res.data) || [];
+  },
+  async missions(): Promise<Mission[]> {
+    const res = await apiClient.get<Envelope<Mission[] | null>>('/military/missions');
+    return unwrap(res.data) || [];
+  },
+  async stats(): Promise<MilitaryStats> {
+    const res = await apiClient.get<Envelope<MilitaryStats>>('/military/stats');
+    return unwrap(res.data);
+  },
+};
+
+/* -------------------------------- Cases ---------------------------------- */
+
+interface BackendCase {
+  id: string;
+  title: string;
+  description: string;
+  status: string;
+  priority: string;
+  classification?: string;
+  owner_id?: string;
+  created_at: string;
+}
+
+export function mapCase(c: BackendCase): Case {
+  return {
+    id: c.id,
+    title: c.title,
+    description: c.description,
+    status: (c.status as Case['status']) || 'open',
+    priority: (c.priority as Case['priority']) || 'medium',
+    assignee: c.owner_id ? c.owner_id.slice(0, 8) : 'unassigned',
+    entityCount: 0,
+    created_at: c.created_at,
+  };
+}
+
+export const casesApi = {
+  async list(): Promise<Case[]> {
+    const res = await apiClient.get<Envelope<BackendCase[] | null>>('/cases');
+    return (unwrap(res.data) || []).map(mapCase);
+  },
+};
+
+export const timelineApi = {
+  async list(params: { type?: string; entityId?: string } = {}): Promise<TimelineEvent[]> {
+    const res = await apiClient.get<Envelope<BackendEvent[] | null>>('/timeline', {
+      params: {
+        type: params.type && params.type !== 'all' ? params.type : undefined,
+        entity_id: params.entityId || undefined,
+      },
+    });
+    return (unwrap(res.data) || []).map(mapEvent);
   },
 };
 

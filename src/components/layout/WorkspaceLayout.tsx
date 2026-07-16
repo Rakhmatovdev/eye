@@ -6,11 +6,13 @@ import {
   LayoutDashboard, 
   Search, 
   Share2, 
-  Map, 
-  Clock, 
-  FolderLock, 
+  Map,
+  Clock,
+  FolderLock,
   LogOut,
-  ShieldAlert
+  ShieldAlert,
+  Cctv,
+  Crosshair
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 
@@ -34,6 +36,8 @@ export default function WorkspaceLayout({ children }: WorkspaceLayoutProps) {
     { name: 'Search', path: '/search', icon: Search },
     { name: 'Graph Analysis', path: '/graph/case-01', icon: Share2 },
     { name: 'Geospatial Map', path: '/map', icon: Map },
+    { name: 'Surveillance', path: '/surveillance', icon: Cctv },
+    { name: 'Command Post', path: '/command', icon: Crosshair },
     { name: 'Time Analysis', path: '/timeline', icon: Clock },
     { name: 'Case Files', path: '/cases', icon: FolderLock },
   ];
