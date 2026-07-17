@@ -12,31 +12,39 @@ export interface AuthUser {
 interface AuthState {
   user: AuthUser | null;
   token: string | null;
+  refreshToken: string | null;
   isAuthenticated: boolean;
-  login: (user: AuthUser, token: string) => void;
+  login: (user: AuthUser, token: string, refreshToken?: string | null) => void;
   logout: () => void;
   updateUser: (patch: Partial<AuthUser>) => void;
+  // Swaps in a freshly-minted access token after a silent refresh, without
+  // touching the user/refresh token or forcing a re-render of unrelated state.
+  setAccessToken: (token: string) => void;
 }
 
 const STORAGE_KEY = 'nexus.auth';
 
-function loadInitial(): { user: AuthUser | null; token: string | null } {
-  if (typeof window === 'undefined') return { user: null, token: null };
+function loadInitial(): { user: AuthUser | null; token: string | null; refreshToken: string | null } {
+  if (typeof window === 'undefined') return { user: null, token: null, refreshToken: null };
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { user: null, token: null };
+    if (!raw) return { user: null, token: null, refreshToken: null };
     const parsed = JSON.parse(raw);
-    return { user: parsed.user ?? null, token: parsed.token ?? null };
+    return {
+      user: parsed.user ?? null,
+      token: parsed.token ?? null,
+      refreshToken: parsed.refreshToken ?? null,
+    };
   } catch {
-    return { user: null, token: null };
+    return { user: null, token: null, refreshToken: null };
   }
 }
 
-function persist(user: AuthUser | null, token: string | null) {
+function persist(user: AuthUser | null, token: string | null, refreshToken: string | null) {
   if (typeof window === 'undefined') return;
   try {
     if (user && token) {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ user, token }));
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ user, token, refreshToken }));
     } else {
       window.localStorage.removeItem(STORAGE_KEY);
     }
@@ -50,14 +58,15 @@ const initial = loadInitial();
 export const useAuthStore = create<AuthState>((set, get) => ({
   user: initial.user,
   token: initial.token,
+  refreshToken: initial.refreshToken,
   isAuthenticated: !!initial.token,
-  login: (user, token) => {
-    persist(user, token);
-    set({ user, token, isAuthenticated: true });
+  login: (user, token, refreshToken) => {
+    persist(user, token, refreshToken ?? null);
+    set({ user, token, refreshToken: refreshToken ?? null, isAuthenticated: true });
   },
   logout: () => {
-    persist(null, null);
-    set({ user: null, token: null, isAuthenticated: false });
+    persist(null, null, null);
+    set({ user: null, token: null, refreshToken: null, isAuthenticated: false });
   },
   // Patches the cached user (e.g. after enabling/disabling MFA) without a
   // fresh login round-trip.
@@ -65,7 +74,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const current = get().user;
     if (!current) return;
     const updated = { ...current, ...patch };
-    persist(updated, get().token);
+    persist(updated, get().token, get().refreshToken);
     set({ user: updated });
+  },
+  setAccessToken: (token) => {
+    persist(get().user, token, get().refreshToken);
+    set({ token });
   },
 }));

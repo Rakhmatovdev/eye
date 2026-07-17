@@ -172,7 +172,7 @@ export function mapRelationship(r: BackendRelationship): Relationship {
 // with `otp`) or a completed login (user + token).
 export type LoginResult =
   | { mfaRequired: true }
-  | { mfaRequired: false; user: AuthUser; token: string };
+  | { mfaRequired: false; user: AuthUser; token: string; refreshToken?: string };
 
 export const authApi = {
   async login(email: string, password: string, otp?: string): Promise<LoginResult> {
@@ -185,7 +185,12 @@ export const authApi = {
     if (data.mfa_required) {
       return { mfaRequired: true };
     }
-    return { mfaRequired: false, user: mapUser(data.user as BackendUser), token: data.access_token as string };
+    return {
+      mfaRequired: false,
+      user: mapUser(data.user as BackendUser),
+      token: data.access_token as string,
+      refreshToken: data.refresh_token,
+    };
   },
   async logout(): Promise<void> {
     try {
@@ -197,6 +202,15 @@ export const authApi = {
   async me(): Promise<AuthUser> {
     const res = await apiClient.get<Envelope<BackendUser>>('/auth/me');
     return mapUser(unwrap(res.data));
+  },
+  // Backend revokes all refresh tokens on success — callers must force a
+  // fresh login afterwards (the current session's access token still works
+  // until it expires, but silent refresh will no longer succeed).
+  async changePassword(currentPassword: string, newPassword: string): Promise<void> {
+    await apiClient.post('/auth/change-password', {
+      current_password: currentPassword,
+      new_password: newPassword,
+    });
   },
 };
 
@@ -256,6 +270,29 @@ export const entitiesApi = {
       nodes: (data.nodes || []).map(mapEntity),
       edges: (data.edges || []).map(mapRelationship),
     };
+  },
+
+  // Full replace of type/classification/properties. Callers should seed the
+  // properties payload from the entity's current (mapped) shape so fields the
+  // UI doesn't expose for editing (geo, tags, risk_score, ...) round-trip
+  // instead of being dropped.
+  async update(
+    id: string,
+    input: { type?: string; classification?: string; properties?: Record<string, unknown> }
+  ): Promise<Entity> {
+    const res = await apiClient.put<Envelope<BackendEntity>>(`/entities/${id}`, input);
+    return mapEntity(unwrap(res.data));
+  },
+
+  // Deletes the entity and its relationships (backend cascades).
+  async remove(id: string): Promise<void> {
+    await apiClient.delete(`/entities/${id}`);
+  },
+};
+
+export const relationshipsApi = {
+  async remove(id: string): Promise<void> {
+    await apiClient.delete(`/entities/relationship/${id}`);
   },
 };
 
@@ -393,6 +430,24 @@ export const casesApi = {
     const res = await apiClient.get<Envelope<BackendCase[] | null>>('/cases');
     return (unwrap(res.data) || []).map(mapCase);
   },
+  async get(id: string): Promise<Case> {
+    const res = await apiClient.get<Envelope<BackendCase>>(`/cases/${id}`);
+    return mapCase(unwrap(res.data));
+  },
+  async update(id: string, patch: { title?: string; description?: string; status?: string }): Promise<Case> {
+    const res = await apiClient.patch<Envelope<BackendCase>>(`/cases/${id}`, patch);
+    return mapCase(unwrap(res.data));
+  },
+  async remove(id: string): Promise<void> {
+    await apiClient.delete(`/cases/${id}`);
+  },
+  async entities(caseId: string): Promise<Entity[]> {
+    const res = await apiClient.get<Envelope<BackendEntity[] | null>>(`/cases/${caseId}/entities`);
+    return (unwrap(res.data) || []).map(mapEntity);
+  },
+  async removeEntity(caseId: string, entityId: string): Promise<void> {
+    await apiClient.delete(`/cases/${caseId}/entities/${entityId}`);
+  },
 };
 
 /* ---------------------------------- AI ----------------------------------- */
@@ -400,6 +455,13 @@ export const casesApi = {
 export interface ChatTurn {
   role: 'user' | 'assistant';
   content: string;
+}
+
+export interface ChatHistoryEntry {
+  message: string;
+  reply: string;
+  source: string;
+  ts: string;
 }
 
 export const aiApi = {
@@ -410,6 +472,12 @@ export const aiApi = {
       context,
     });
     return unwrap(res.data);
+  },
+  // Oldest-first past exchanges for this user. Callers should tolerate this
+  // 404ing (endpoint may not exist yet) and just start with an empty chat.
+  async history(limit = 50): Promise<ChatHistoryEntry[]> {
+    const res = await apiClient.get<Envelope<ChatHistoryEntry[] | null>>('/ai/history', { params: { limit } });
+    return unwrap(res.data) || [];
   },
 };
 

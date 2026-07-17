@@ -1,6 +1,6 @@
 'use client';
 import React, { useRef, useState, useEffect } from 'react';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import WorkspaceLayout from '../../components/layout/WorkspaceLayout';
 import { aiApi, type ChatTurn } from '../../lib/api';
 import { Bot, Send, User, Sparkles, Cpu, Cloud, CircleOff } from 'lucide-react';
@@ -36,7 +36,30 @@ function SourceBadge({ source }: { source: string }) {
 export default function AssistantPage() {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState('');
+  const [historyLoaded, setHistoryLoaded] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Pre-populate the chat from past exchanges (oldest-first) on mount. If the
+  // endpoint 404s / errors, `data` stays undefined and the chat just starts
+  // empty like before — no visible error state.
+  const historyQ = useQuery({
+    queryKey: ['ai', 'history'],
+    queryFn: () => aiApi.history(50),
+    retry: false,
+  });
+
+  useEffect(() => {
+    if (historyLoaded) return;
+    if (!historyQ.isSuccess) return;
+    setHistoryLoaded(true);
+    if (!historyQ.data || historyQ.data.length === 0) return;
+    const loaded: Msg[] = [];
+    for (const h of historyQ.data) {
+      loaded.push({ role: 'user', content: h.message });
+      loaded.push({ role: 'assistant', content: h.reply, source: h.source });
+    }
+    setMessages(loaded);
+  }, [historyQ.isSuccess, historyQ.data, historyLoaded]);
 
   const chatM = useMutation({
     mutationFn: (text: string) =>

@@ -17,9 +17,34 @@ import {
   Settings
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
+import { useLocaleStore, type Locale } from '../../store/localeStore';
+import { useT } from '../../lib/i18n';
 
 interface WorkspaceLayoutProps {
   children: React.ReactNode;
+}
+
+const LOCALES: Locale[] = ['uz', 'ru', 'en'];
+
+function LocaleSwitcher() {
+  const locale = useLocaleStore((state) => state.locale);
+  const setLocale = useLocaleStore((state) => state.setLocale);
+
+  return (
+    <div className="flex items-center gap-0.5 bg-gray-950/60 border border-gray-800/60 rounded-lg p-0.5">
+      {LOCALES.map((l) => (
+        <button
+          key={l}
+          onClick={() => setLocale(l)}
+          className={`px-1.5 py-0.5 rounded text-[9px] font-bold font-mono uppercase tracking-wide transition-all ${
+            locale === l ? 'bg-cyan-600/20 text-cyan-400' : 'text-gray-600 hover:text-gray-300'
+          }`}
+        >
+          {l}
+        </button>
+      ))}
+    </div>
+  );
 }
 
 export default function WorkspaceLayout({ children }: WorkspaceLayoutProps) {
@@ -27,6 +52,7 @@ export default function WorkspaceLayout({ children }: WorkspaceLayoutProps) {
   const router = useRouter();
   const logout = useAuthStore(state => state.logout);
   const user = useAuthStore(state => state.user);
+  const t = useT();
 
   const handleLogout = () => {
     logout();
@@ -34,16 +60,16 @@ export default function WorkspaceLayout({ children }: WorkspaceLayoutProps) {
   };
 
   const navItems = [
-    { name: 'Home', path: '/dashboard', icon: LayoutDashboard },
-    { name: 'Search', path: '/search', icon: Search },
-    { name: 'Graph Analysis', path: '/graph/case-01', icon: Share2 },
-    { name: 'Geospatial Map', path: '/map', icon: Map },
-    { name: 'Surveillance', path: '/surveillance', icon: Cctv },
-    { name: 'Command Post', path: '/command', icon: Crosshair },
-    { name: 'AI Analyst', path: '/assistant', icon: Bot },
-    { name: 'Time Analysis', path: '/timeline', icon: Clock },
-    { name: 'Case Files', path: '/cases', icon: FolderLock },
-    { name: 'Settings', path: '/settings', icon: Settings },
+    { name: t('nav_home'), path: '/dashboard', icon: LayoutDashboard },
+    { name: t('nav_search'), path: '/search', icon: Search },
+    { name: t('nav_graph'), path: '/graph/case-01', icon: Share2 },
+    { name: t('nav_map'), path: '/map', icon: Map },
+    { name: t('nav_surveillance'), path: '/surveillance', icon: Cctv },
+    { name: t('nav_command'), path: '/command', icon: Crosshair },
+    { name: t('nav_assistant'), path: '/assistant', icon: Bot },
+    { name: t('nav_timeline'), path: '/timeline', icon: Clock },
+    { name: t('nav_cases'), path: '/cases', icon: FolderLock },
+    { name: t('nav_settings'), path: '/settings', icon: Settings },
   ];
 
   return (
@@ -59,6 +85,11 @@ export default function WorkspaceLayout({ children }: WorkspaceLayoutProps) {
             <span className="font-extrabold text-sm tracking-wider text-cyan-400 font-mono">
               BRAVE ANALYST
             </span>
+          </div>
+
+          {/* Locale switcher */}
+          <div className="px-5 py-2 border-b border-gray-800/60 flex justify-end">
+            <LocaleSwitcher />
           </div>
 
           {/* Nav Items */}
@@ -90,7 +121,7 @@ export default function WorkspaceLayout({ children }: WorkspaceLayoutProps) {
             <div className="px-2 py-1 space-y-1">
               <div className="flex items-center gap-1 text-[10px] font-bold text-yellow-500 uppercase tracking-widest">
                 <ShieldAlert size={10} />
-                <span>{user.clearance} clearance</span>
+                <span>{user.clearance} {t('clearance_suffix')}</span>
               </div>
               <p className="text-xs font-bold text-gray-300 font-mono leading-none truncate">{user.name}</p>
             </div>
@@ -100,7 +131,7 @@ export default function WorkspaceLayout({ children }: WorkspaceLayoutProps) {
             className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold font-mono text-red-400 hover:bg-red-950/20 transition-all border border-transparent"
           >
             <LogOut size={16} />
-            <span>Logout</span>
+            <span>{t('logout')}</span>
           </button>
         </div>
       </aside>

@@ -1,21 +1,35 @@
 'use client';
-import React from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { useParams } from 'next/navigation';
+import React, { useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import WorkspaceLayout from '../../../components/layout/WorkspaceLayout';
 import { entitiesApi, sensorsApi, timelineApi } from '../../../lib/api';
-import { mockEntities } from '../../../data/mockEntities';
+import { apiErrorMessage } from '../../../lib/apiClient';
+import { useT, type TKey } from '../../../lib/i18n';
+import ConfirmDialog from '../../../components/common/ConfirmDialog';
+import { mockEntities, type Entity, type EntityType, type ClassificationLevel } from '../../../data/mockEntities';
 import { mockEvents } from '../../../data/mockEvents';
 import { mockDetections } from '../../../data/mockSensors';
 import {
   ArrowLeft, ShieldAlert, MapPin, ScanFace, Clock, Share2, Cctv, AlertCircle, Gauge,
+  Pencil, Trash2, Plus, X,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
+const ENTITY_TYPES: EntityType[] = ['person', 'organization', 'vehicle', 'location', 'phone', 'document', 'transaction'];
+const CLASSIFICATIONS: ClassificationLevel[] = ['public', 'internal', 'confidential', 'secret'];
+
 export default function EntityDossierPage() {
   const params = useParams();
+  const router = useRouter();
+  const queryClient = useQueryClient();
+  const t = useT();
   const id = String(params.id);
+
+  const [showEdit, setShowEdit] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [actionError, setActionError] = useState('');
 
   const entityQ = useQuery({ queryKey: ['entity', id], queryFn: () => entitiesApi.get(id) });
   const sightQ = useQuery({ queryKey: ['sightings', id], queryFn: () => sensorsApi.detections({ entityId: id }) });
@@ -27,6 +41,30 @@ export default function EntityDossierPage() {
   const sightings = sightQ.isError ? mockDetections.filter((d) => d.entity_id === id) : sightQ.data ?? [];
   const events = evQ.isError ? mockEvents.filter((e) => e.entity_id === id) : evQ.data ?? [];
   const connections = connQ.data;
+
+  const updateM = useMutation({
+    mutationFn: (input: { type: string; classification: string; properties: Record<string, unknown> }) =>
+      entitiesApi.update(id, input),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(['entity', id], updated);
+      queryClient.invalidateQueries({ queryKey: ['entities'] });
+      setShowEdit(false);
+      setActionError('');
+    },
+    onError: (err) => setActionError(apiErrorMessage(err, 'Failed to update entity.')),
+  });
+
+  const deleteM = useMutation({
+    mutationFn: () => entitiesApi.remove(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['entities'] });
+      router.push('/search');
+    },
+    onError: (err) => {
+      setActionError(apiErrorMessage(err, 'Failed to delete entity.'));
+      setShowDeleteConfirm(false);
+    },
+  });
 
   if (!entity) {
     return (
@@ -72,15 +110,37 @@ export default function EntityDossierPage() {
               </div>
             </div>
           </div>
-          {entity.risk_score != null && (
-            <div className="text-right">
-              <div className="text-[9px] font-mono uppercase tracking-widest text-gray-500 flex items-center gap-1 justify-end"><Gauge size={11} /> risk</div>
-              <div className={`text-3xl font-bold font-mono ${
-                entity.risk_score >= 80 ? 'text-red-400' : entity.risk_score >= 50 ? 'text-amber-400' : 'text-emerald-400'
-              }`}>{entity.risk_score}</div>
+          <div className="flex flex-col items-end gap-3">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => { setActionError(''); setShowEdit(true); }}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-800/60 hover:bg-gray-700/60 border border-gray-700/60 text-gray-300 rounded-xl text-xxs font-bold font-mono transition-all"
+              >
+                <Pencil size={11} /> {t('common_edit')}
+              </button>
+              <button
+                onClick={() => { setActionError(''); setShowDeleteConfirm(true); }}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600/10 hover:bg-red-600/20 border border-red-500/30 text-red-400 rounded-xl text-xxs font-bold font-mono transition-all"
+              >
+                <Trash2 size={11} /> {t('common_delete')}
+              </button>
             </div>
-          )}
+            {entity.risk_score != null && (
+              <div className="text-right">
+                <div className="text-[9px] font-mono uppercase tracking-widest text-gray-500 flex items-center gap-1 justify-end"><Gauge size={11} /> risk</div>
+                <div className={`text-3xl font-bold font-mono ${
+                  entity.risk_score >= 80 ? 'text-red-400' : entity.risk_score >= 50 ? 'text-amber-400' : 'text-emerald-400'
+                }`}>{entity.risk_score}</div>
+              </div>
+            )}
+          </div>
         </div>
+
+        {actionError && (
+          <div className="bg-red-500/10 border border-red-500/20 text-red-400 px-4 py-2.5 rounded-xl text-xs font-semibold font-mono">
+            {actionError}
+          </div>
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Attributes */}
@@ -166,7 +226,179 @@ export default function EntityDossierPage() {
           </Section>
         </div>
       </div>
+
+      {showEdit && (
+        <EditEntityModal
+          entity={entity}
+          isPending={updateM.isPending}
+          onCancel={() => setShowEdit(false)}
+          onSave={(input) => updateM.mutate(input)}
+          t={t}
+        />
+      )}
+
+      {showDeleteConfirm && (
+        <ConfirmDialog
+          title="Delete entity?"
+          message={`This permanently deletes "${entity.name}" and its relationships. This cannot be undone.`}
+          isPending={deleteM.isPending}
+          onCancel={() => setShowDeleteConfirm(false)}
+          onConfirm={() => deleteM.mutate()}
+        />
+      )}
     </WorkspaceLayout>
+  );
+}
+
+/* -------------------------------- Edit modal ------------------------------ */
+
+type TFn = (key: TKey) => string;
+
+interface EditEntityInput {
+  type: string;
+  classification: string;
+  properties: Record<string, unknown>;
+}
+
+function EditEntityModal({
+  entity,
+  isPending,
+  onCancel,
+  onSave,
+  t,
+}: {
+  entity: Entity;
+  isPending: boolean;
+  onCancel: () => void;
+  onSave: (input: EditEntityInput) => void;
+  t: TFn;
+}) {
+  const [label, setLabel] = useState(entity.name);
+  const [type, setType] = useState<string>(entity.type);
+  const [classification, setClassification] = useState<string>(entity.classification);
+  const [rows, setRows] = useState<Array<{ key: string; value: string }>>(
+    Object.entries(entity.properties).map(([key, value]) => ({ key, value: String(value) }))
+  );
+
+  const updateRow = (i: number, patch: Partial<{ key: string; value: string }>) => {
+    setRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
+  };
+  const removeRow = (i: number) => setRows((prev) => prev.filter((_, idx) => idx !== i));
+  const addRow = () => setRows((prev) => [...prev, { key: '', value: '' }]);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    // Reconstruct the raw `properties` payload: start from anything the UI
+    // doesn't expose for editing (geo/tags/risk_score) so those survive the
+    // round-trip, then layer in the edited name + key/value rows.
+    const properties: Record<string, unknown> = {};
+    if (entity.geo) {
+      properties.lat = entity.geo.lat;
+      properties.lng = entity.geo.lng;
+      if (entity.geo.address) properties.address = entity.geo.address;
+    }
+    if (entity.tags.length > 0) properties.tags = entity.tags;
+    if (entity.risk_score != null) properties.risk_score = entity.risk_score;
+    properties.name = label;
+    for (const row of rows) {
+      const key = row.key.trim();
+      if (!key) continue;
+      properties[key] = row.value;
+    }
+    onSave({ type, classification, properties });
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+      <div className="w-full max-w-lg bg-[#0c0e17] border border-gray-800 rounded-2xl p-6 space-y-4 max-h-[85vh] overflow-y-auto">
+        <h2 className="text-sm font-bold font-mono uppercase tracking-wide text-white">{t('common_edit')} entity</h2>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-xxs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Label</label>
+            <input
+              value={label}
+              onChange={(e) => setLabel(e.target.value)}
+              required
+              className="w-full px-3 py-2 bg-gray-950 border border-gray-800 rounded-xl text-xs text-gray-200 focus:outline-none focus:border-cyan-500/50"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xxs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Type</label>
+              <select
+                value={type}
+                onChange={(e) => setType(e.target.value)}
+                className="w-full px-3 py-2 bg-gray-950 border border-gray-800 rounded-xl text-xs text-gray-200 focus:outline-none"
+              >
+                {ENTITY_TYPES.map((tp) => (
+                  <option key={tp} value={tp}>{tp}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xxs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Classification</label>
+              <select
+                value={classification}
+                onChange={(e) => setClassification(e.target.value)}
+                className="w-full px-3 py-2 bg-gray-950 border border-gray-800 rounded-xl text-xs text-gray-200 focus:outline-none"
+              >
+                {CLASSIFICATIONS.map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="block text-xxs font-semibold text-gray-500 uppercase tracking-wider">Properties</label>
+              <button type="button" onClick={addRow} className="flex items-center gap-1 text-[10px] text-cyan-400 hover:underline">
+                <Plus size={11} /> Add
+              </button>
+            </div>
+            <div className="space-y-2">
+              {rows.map((row, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <input
+                    value={row.key}
+                    onChange={(e) => updateRow(i, { key: e.target.value })}
+                    placeholder="key"
+                    className="w-1/3 px-2 py-1.5 bg-gray-950 border border-gray-800 rounded-lg text-xxs text-gray-300 focus:outline-none"
+                  />
+                  <input
+                    value={row.value}
+                    onChange={(e) => updateRow(i, { value: e.target.value })}
+                    placeholder="value"
+                    className="flex-1 px-2 py-1.5 bg-gray-950 border border-gray-800 rounded-lg text-xxs text-gray-300 focus:outline-none"
+                  />
+                  <button type="button" onClick={() => removeRow(i)} className="p-1.5 text-gray-600 hover:text-red-400">
+                    <X size={13} />
+                  </button>
+                </div>
+              ))}
+              {rows.length === 0 && <p className="text-xxs text-gray-600 font-mono">No properties.</p>}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 pt-2">
+            <button
+              type="submit"
+              disabled={isPending}
+              className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl text-xs font-bold font-mono disabled:opacity-40 transition-all"
+            >
+              {t('common_save')}
+            </button>
+            <button
+              type="button"
+              onClick={onCancel}
+              className="px-4 py-2 text-gray-500 hover:text-gray-300 rounded-xl text-xs font-semibold font-mono transition-all"
+            >
+              {t('common_cancel')}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
   );
 }
 

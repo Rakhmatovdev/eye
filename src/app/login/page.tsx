@@ -5,10 +5,12 @@ import { Terminal, Key, ShieldAlert, ShieldCheck } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import { authApi } from '../../lib/api';
 import { apiErrorMessage } from '../../lib/apiClient';
+import { useT } from '../../lib/i18n';
 
 export default function LoginPage() {
   const router = useRouter();
   const login = useAuthStore((state) => state.login);
+  const t = useT();
 
   const [email, setEmail] = useState('analyst@platform.io');
   const [password, setPassword] = useState('Analyst123!');
@@ -29,7 +31,7 @@ export default function LoginPage() {
         setLoading(false);
         return;
       }
-      login(result.user, result.token);
+      login(result.user, result.token, result.refreshToken);
       router.push('/dashboard');
     } catch (err) {
       setError(apiErrorMessage(err, mfaRequired ? 'Invalid verification code.' : 'Authorization credentials rejected.'));
@@ -56,12 +58,10 @@ export default function LoginPage() {
             {mfaRequired ? <ShieldCheck size={24} /> : <Terminal size={24} className="animate-pulse" />}
           </div>
           <h2 className="text-xl font-bold tracking-tight text-white uppercase">
-            {mfaRequired ? 'Two-Factor Verification' : 'Brave Analyst Canvas'}
+            {mfaRequired ? t('login_mfa_title') : t('login_title')}
           </h2>
           <p className="text-gray-500 text-xxs mt-1">
-            {mfaRequired
-              ? 'Enter the 6-digit code from your authenticator app.'
-              : 'Classified Intelligence Analysis Workspace'}
+            {mfaRequired ? t('login_mfa_subtitle') : t('login_subtitle')}
           </p>
         </div>
 
@@ -75,7 +75,7 @@ export default function LoginPage() {
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
               <label className="block text-xxs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
-                Analyst Identity
+                {t('login_identity_label')}
               </label>
               <div className="relative">
                 <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-600">
@@ -94,7 +94,7 @@ export default function LoginPage() {
 
             <div>
               <label className="block text-xxs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
-                Access Secret
+                {t('login_secret_label')}
               </label>
               <div className="relative">
                 <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-600">
@@ -116,7 +116,7 @@ export default function LoginPage() {
               disabled={loading}
               className="w-full py-2.5 bg-cyan-600 hover:bg-cyan-500 active:bg-cyan-700 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-cyan-500/10"
             >
-              {loading ? 'Initializing Secure Sandbox...' : 'Open Workspace'}
+              {loading ? t('login_submitting') : t('login_submit')}
             </button>
             <div className="text-center mt-4">
               <span className="text-[10px] text-gray-600">analyst@platform.io / Analyst123!</span>
@@ -126,7 +126,7 @@ export default function LoginPage() {
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
               <label className="block text-xxs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
-                Verification Code
+                {t('login_verification_label')}
               </label>
               <div className="relative">
                 <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-600">
@@ -152,14 +152,14 @@ export default function LoginPage() {
               disabled={loading || otp.length !== 6}
               className="w-full py-2.5 bg-cyan-600 hover:bg-cyan-500 active:bg-cyan-700 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-cyan-500/10 disabled:opacity-40"
             >
-              {loading ? 'Verifying...' : 'Verify & Continue'}
+              {loading ? t('login_verifying') : t('login_verify')}
             </button>
             <button
               type="button"
               onClick={handleBack}
               className="w-full py-2 text-gray-500 hover:text-gray-300 rounded-xl text-xxs font-semibold transition-all"
             >
-              Back to login
+              {t('login_back')}
             </button>
           </form>
         )}

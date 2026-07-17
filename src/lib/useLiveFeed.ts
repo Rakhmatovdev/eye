@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import type { Detection } from './api';
+import { useAuthStore } from '../store/authStore';
 
 export type LiveConnStatus = 'connecting' | 'live' | 'offline';
 
@@ -11,11 +12,19 @@ const SEVERITY_CONFIDENCE: Record<string, number> = {
   low: 0.4,
 };
 
+const INITIAL_BACKOFF_MS = 1000;
+const MAX_BACKOFF_MS = 30000;
+
 let liveCounter = 0;
 
+// `/ws` requires a JWT — pass the current access token as a query param so
+// the backend can authenticate the upgrade request (tokenless connections
+// are rejected). Reconnects always read the *latest* token from the store.
 function resolveWsUrl(): string {
   const host = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
-  return `ws://${host}:8080/ws`;
+  const base = `ws://${host}:8080/ws`;
+  const token = useAuthStore.getState().token;
+  return token ? `${base}?token=${encodeURIComponent(token)}` : base;
 }
 
 function toDetection(frame: { type: string; data: any }): Detection | null {
@@ -60,11 +69,14 @@ function toDetection(frame: { type: string; data: any }): Detection | null {
 }
 
 /**
- * Connects to the backend's unauthenticated live WebSocket (`/ws`) and
- * exposes a rolling list of `detection`/`threat` frames plus the connection
- * status, so pages can prepend real-time items onto their seeded demo data.
- * Guarded for React 18 StrictMode double-invoke: the socket is opened and
- * torn down inside the effect's cleanup.
+ * Connects to the backend's authenticated live WebSocket (`/ws?token=...`)
+ * and exposes a rolling list of `detection`/`threat` frames plus the
+ * connection status, so pages can prepend real-time items onto their seeded
+ * demo data. Reconnects automatically on close/error with exponential
+ * backoff (1s → 2s → 4s → ... capped at 30s), resetting the backoff after
+ * every successful open. Guarded for React 18 StrictMode double-invoke and
+ * SSR: the socket (and any pending reconnect timer) is opened/cleared inside
+ * the effect's cleanup, and the connect path only runs client-side.
  */
 export function useLiveFeed(maxItems = 20) {
   const [items, setItems] = useState<Detection[]>([]);
@@ -72,43 +84,73 @@ export function useLiveFeed(maxItems = 20) {
   const wsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+
     let cancelled = false;
     let ws: WebSocket | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let backoff = INITIAL_BACKOFF_MS;
 
-    try {
-      ws = new WebSocket(resolveWsUrl());
-      wsRef.current = ws;
-
-      ws.onopen = () => {
-        if (!cancelled) setStatus('live');
-      };
-
-      ws.onmessage = (ev) => {
+    const scheduleReconnect = () => {
+      if (cancelled) return;
+      reconnectTimer = setTimeout(() => {
         if (cancelled) return;
-        try {
-          const frame = JSON.parse(ev.data);
-          const detection = toDetection(frame);
-          if (detection) {
-            setItems((prev) => [detection, ...prev].slice(0, maxItems));
+        connect();
+        backoff = Math.min(backoff * 2, MAX_BACKOFF_MS);
+      }, backoff);
+    };
+
+    const connect = () => {
+      if (cancelled) return;
+      setStatus('connecting');
+
+      try {
+        ws = new WebSocket(resolveWsUrl());
+        wsRef.current = ws;
+
+        ws.onopen = () => {
+          if (cancelled) return;
+          backoff = INITIAL_BACKOFF_MS; // reset after a successful open
+          setStatus('live');
+        };
+
+        ws.onmessage = (ev) => {
+          if (cancelled) return;
+          try {
+            const frame = JSON.parse(ev.data);
+            const detection = toDetection(frame);
+            if (detection) {
+              setItems((prev) => [detection, ...prev].slice(0, maxItems));
+            }
+          } catch {
+            // ignore malformed frames
           }
-        } catch {
-          // ignore malformed frames
+        };
+
+        ws.onerror = () => {
+          if (!cancelled) setStatus('offline');
+          // `onclose` always follows `onerror` for a failed connection, so
+          // the reconnect is scheduled there (once) rather than here too.
+        };
+
+        ws.onclose = () => {
+          if (cancelled) return;
+          setStatus('offline');
+          scheduleReconnect();
+        };
+      } catch {
+        if (!cancelled) {
+          setStatus('offline');
+          scheduleReconnect();
         }
-      };
+      }
+    };
 
-      ws.onerror = () => {
-        if (!cancelled) setStatus('offline');
-      };
-
-      ws.onclose = () => {
-        if (!cancelled) setStatus((prev) => (prev === 'live' ? 'offline' : prev));
-      };
-    } catch {
-      setStatus('offline');
-    }
+    connect();
 
     return () => {
       cancelled = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
       wsRef.current = null;
       ws?.close();
     };
