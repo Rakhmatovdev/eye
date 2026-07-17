@@ -13,7 +13,8 @@ import {
   ShieldAlert,
   Cctv,
   Crosshair,
-  Bot
+  Bot,
+  Settings
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 
@@ -42,6 +43,7 @@ export default function WorkspaceLayout({ children }: WorkspaceLayoutProps) {
     { name: 'AI Analyst', path: '/assistant', icon: Bot },
     { name: 'Time Analysis', path: '/timeline', icon: Clock },
     { name: 'Case Files', path: '/cases', icon: FolderLock },
+    { name: 'Settings', path: '/settings', icon: Settings },
   ];
 
   return (

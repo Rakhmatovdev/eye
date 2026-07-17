@@ -15,13 +15,17 @@ interface BackendUser {
   role: string;
   clearance_level: number;
   status: string;
+  mfa_enabled?: boolean;
 }
 
+// LoginData covers both outcomes of POST /auth/login: a normal success (tokens
+// + user) and the MFA challenge (`mfa_required: true`, no tokens/user yet).
 interface LoginData {
-  access_token: string;
-  refresh_token: string;
-  expires_in: number;
-  user: BackendUser;
+  access_token?: string;
+  refresh_token?: string;
+  expires_in?: number;
+  user?: BackendUser;
+  mfa_required?: boolean;
 }
 
 interface BackendEntity {
@@ -76,6 +80,7 @@ export function mapUser(u: BackendUser): AuthUser {
     email: u.email,
     role: u.role,
     clearance: CLEARANCE_LABELS[u.clearance_level] || `LVL-${u.clearance_level}`,
+    mfaEnabled: !!u.mfa_enabled,
   };
 }
 
@@ -163,11 +168,24 @@ export function mapRelationship(r: BackendRelationship): Relationship {
 
 /* --------------------------------- API ----------------------------------- */
 
+// LoginResult is either the MFA challenge (no tokens yet — caller must resubmit
+// with `otp`) or a completed login (user + token).
+export type LoginResult =
+  | { mfaRequired: true }
+  | { mfaRequired: false; user: AuthUser; token: string };
+
 export const authApi = {
-  async login(email: string, password: string): Promise<{ user: AuthUser; token: string }> {
-    const res = await apiClient.post<Envelope<LoginData>>('/auth/login', { email, password });
+  async login(email: string, password: string, otp?: string): Promise<LoginResult> {
+    const res = await apiClient.post<Envelope<LoginData>>('/auth/login', {
+      email,
+      password,
+      otp: otp || undefined,
+    });
     const data = unwrap(res.data);
-    return { user: mapUser(data.user), token: data.access_token };
+    if (data.mfa_required) {
+      return { mfaRequired: true };
+    }
+    return { mfaRequired: false, user: mapUser(data.user as BackendUser), token: data.access_token as string };
   },
   async logout(): Promise<void> {
     try {
@@ -175,6 +193,31 @@ export const authApi = {
     } catch {
       /* best-effort; token is dropped client-side regardless */
     }
+  },
+  async me(): Promise<AuthUser> {
+    const res = await apiClient.get<Envelope<BackendUser>>('/auth/me');
+    return mapUser(unwrap(res.data));
+  },
+};
+
+/* --------------------------------- MFA ------------------------------------ */
+
+export interface MFAEnrollment {
+  secret: string;
+  otpauthUrl: string;
+}
+
+export const mfaApi = {
+  async enroll(): Promise<MFAEnrollment> {
+    const res = await apiClient.post<Envelope<{ secret: string; otpauth_url: string }>>('/auth/mfa/enroll');
+    const data = unwrap(res.data);
+    return { secret: data.secret, otpauthUrl: data.otpauth_url };
+  },
+  async verify(otp: string): Promise<void> {
+    await apiClient.post('/auth/mfa/verify', { otp });
+  },
+  async disable(otp: string): Promise<void> {
+    await apiClient.post('/auth/mfa/disable', { otp });
   },
 };
 

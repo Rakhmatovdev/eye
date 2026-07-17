@@ -1,7 +1,7 @@
 'use client';
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Terminal, Key, ShieldAlert } from 'lucide-react';
+import { Terminal, Key, ShieldAlert, ShieldCheck } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import { authApi } from '../../lib/api';
 import { apiErrorMessage } from '../../lib/apiClient';
@@ -12,6 +12,8 @@ export default function LoginPage() {
 
   const [email, setEmail] = useState('analyst@platform.io');
   const [password, setPassword] = useState('Analyst123!');
+  const [otp, setOtp] = useState('');
+  const [mfaRequired, setMfaRequired] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -21,13 +23,24 @@ export default function LoginPage() {
     setError('');
 
     try {
-      const { user, token } = await authApi.login(email, password);
-      login(user, token);
+      const result = await authApi.login(email, password, mfaRequired ? otp : undefined);
+      if (result.mfaRequired) {
+        setMfaRequired(true);
+        setLoading(false);
+        return;
+      }
+      login(result.user, result.token);
       router.push('/dashboard');
     } catch (err) {
-      setError(apiErrorMessage(err, 'Authorization credentials rejected.'));
+      setError(apiErrorMessage(err, mfaRequired ? 'Invalid verification code.' : 'Authorization credentials rejected.'));
       setLoading(false);
     }
+  };
+
+  const handleBack = () => {
+    setMfaRequired(false);
+    setOtp('');
+    setError('');
   };
 
   return (
@@ -40,10 +53,16 @@ export default function LoginPage() {
 
         <div className="text-center mb-8">
           <div className="w-12 h-12 bg-cyan-600/10 text-cyan-400 rounded-xl flex items-center justify-center mx-auto mb-3 border border-cyan-500/20">
-            <Terminal size={24} className="animate-pulse" />
+            {mfaRequired ? <ShieldCheck size={24} /> : <Terminal size={24} className="animate-pulse" />}
           </div>
-          <h2 className="text-xl font-bold tracking-tight text-white uppercase">Brave Analyst Canvas</h2>
-          <p className="text-gray-500 text-xxs mt-1">Classified Intelligence Analysis Workspace</p>
+          <h2 className="text-xl font-bold tracking-tight text-white uppercase">
+            {mfaRequired ? 'Two-Factor Verification' : 'Brave Analyst Canvas'}
+          </h2>
+          <p className="text-gray-500 text-xxs mt-1">
+            {mfaRequired
+              ? 'Enter the 6-digit code from your authenticator app.'
+              : 'Classified Intelligence Analysis Workspace'}
+          </p>
         </div>
 
         {error && (
@@ -52,56 +71,98 @@ export default function LoginPage() {
           </div>
         )}
 
-        <form onSubmit={handleLogin} className="space-y-4">
-          <div>
-            <label className="block text-xxs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
-              Analyst Identity
-            </label>
-            <div className="relative">
-              <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-600">
-                <Terminal size={14} />
-              </span>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full pl-9 pr-4 py-2.5 bg-gray-950 border border-gray-800 rounded-xl text-xs text-gray-300 placeholder-gray-700 focus:outline-none focus:border-cyan-500/50"
-                placeholder="analyst@platform.io"
-                required
-              />
+        {!mfaRequired ? (
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div>
+              <label className="block text-xxs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
+                Analyst Identity
+              </label>
+              <div className="relative">
+                <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-600">
+                  <Terminal size={14} />
+                </span>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2.5 bg-gray-950 border border-gray-800 rounded-xl text-xs text-gray-300 placeholder-gray-700 focus:outline-none focus:border-cyan-500/50"
+                  placeholder="analyst@platform.io"
+                  required
+                />
+              </div>
             </div>
-          </div>
 
-          <div>
-            <label className="block text-xxs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
-              Access Secret
-            </label>
-            <div className="relative">
-              <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-600">
-                <Key size={14} />
-              </span>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full pl-9 pr-4 py-2.5 bg-gray-950 border border-gray-800 rounded-xl text-xs text-gray-300 placeholder-gray-700 focus:outline-none focus:border-cyan-500/50"
-                placeholder="••••••••"
-                required
-              />
+            <div>
+              <label className="block text-xxs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
+                Access Secret
+              </label>
+              <div className="relative">
+                <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-600">
+                  <Key size={14} />
+                </span>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2.5 bg-gray-950 border border-gray-800 rounded-xl text-xs text-gray-300 placeholder-gray-700 focus:outline-none focus:border-cyan-500/50"
+                  placeholder="••••••••"
+                  required
+                />
+              </div>
             </div>
-          </div>
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full py-2.5 bg-cyan-600 hover:bg-cyan-500 active:bg-cyan-700 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-cyan-500/10"
-          >
-            {loading ? 'Initializing Secure Sandbox...' : 'Open Workspace'}
-          </button>
-          <div className="text-center mt-4">
-            <span className="text-[10px] text-gray-600">analyst@platform.io / Analyst123!</span>
-          </div>
-        </form>
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-2.5 bg-cyan-600 hover:bg-cyan-500 active:bg-cyan-700 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-cyan-500/10"
+            >
+              {loading ? 'Initializing Secure Sandbox...' : 'Open Workspace'}
+            </button>
+            <div className="text-center mt-4">
+              <span className="text-[10px] text-gray-600">analyst@platform.io / Analyst123!</span>
+            </div>
+          </form>
+        ) : (
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div>
+              <label className="block text-xxs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
+                Verification Code
+              </label>
+              <div className="relative">
+                <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-600">
+                  <ShieldAlert size={14} />
+                </span>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={6}
+                  value={otp}
+                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  className="w-full pl-9 pr-4 py-2.5 bg-gray-950 border border-gray-800 rounded-xl text-sm text-gray-200 placeholder-gray-700 tracking-[0.4em] text-center font-mono focus:outline-none focus:border-cyan-500/50"
+                  placeholder="000000"
+                  autoFocus
+                  required
+                />
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading || otp.length !== 6}
+              className="w-full py-2.5 bg-cyan-600 hover:bg-cyan-500 active:bg-cyan-700 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-cyan-500/10 disabled:opacity-40"
+            >
+              {loading ? 'Verifying...' : 'Verify & Continue'}
+            </button>
+            <button
+              type="button"
+              onClick={handleBack}
+              className="w-full py-2 text-gray-500 hover:text-gray-300 rounded-xl text-xxs font-semibold transition-all"
+            >
+              Back to login
+            </button>
+          </form>
+        )}
       </div>
     </main>
   );

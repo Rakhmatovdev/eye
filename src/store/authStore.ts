@@ -6,6 +6,7 @@ export interface AuthUser {
   email: string;
   role: string;
   clearance: string;
+  mfaEnabled?: boolean;
 }
 
 interface AuthState {
@@ -14,6 +15,7 @@ interface AuthState {
   isAuthenticated: boolean;
   login: (user: AuthUser, token: string) => void;
   logout: () => void;
+  updateUser: (patch: Partial<AuthUser>) => void;
 }
 
 const STORAGE_KEY = 'nexus.auth';
@@ -45,7 +47,7 @@ function persist(user: AuthUser | null, token: string | null) {
 
 const initial = loadInitial();
 
-export const useAuthStore = create<AuthState>((set) => ({
+export const useAuthStore = create<AuthState>((set, get) => ({
   user: initial.user,
   token: initial.token,
   isAuthenticated: !!initial.token,
@@ -56,5 +58,14 @@ export const useAuthStore = create<AuthState>((set) => ({
   logout: () => {
     persist(null, null);
     set({ user: null, token: null, isAuthenticated: false });
+  },
+  // Patches the cached user (e.g. after enabling/disabling MFA) without a
+  // fresh login round-trip.
+  updateUser: (patch) => {
+    const current = get().user;
+    if (!current) return;
+    const updated = { ...current, ...patch };
+    persist(updated, get().token);
+    set({ user: updated });
   },
 }));
