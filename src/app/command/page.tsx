@@ -5,18 +5,26 @@ import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import WorkspaceLayout from '../../components/layout/WorkspaceLayout';
 import { militaryApi, type Unit, type Threat, type Mission } from '../../lib/api';
+import { useT } from '../../lib/i18n';
 import { mockUnits, mockThreats, mockMissions, mockMilitaryStats } from '../../data/mockMilitary';
 import {
   Crosshair, Shield, Radar, Target, Flag, Users, AlertTriangle, Activity, MapPin, ArrowRight,
 } from 'lucide-react';
 
+// Rendered by React as the dynamic-import fallback, so it's a normal function
+// component and may use hooks.
+function CopMapLoading() {
+  const t = useT();
+  return (
+    <div className="h-full w-full flex items-center justify-center text-gray-500 font-mono text-xs bg-[#07090F]">
+      {t('command_map_loading')}
+    </div>
+  );
+}
+
 const CopMap = dynamic(() => import('../../components/map/CopMap'), {
   ssr: false,
-  loading: () => (
-    <div className="h-full w-full flex items-center justify-center text-gray-500 font-mono text-xs bg-[#07090F]">
-      Rendering common operating picture…
-    </div>
-  ),
+  loading: () => <CopMapLoading />,
 });
 
 const LEVEL_STYLE: Record<string, string> = {
@@ -45,6 +53,7 @@ function timeAgo(ts: string): string {
 }
 
 export default function CommandPage() {
+  const t = useT();
   const [classFilter, setClassFilter] = useState('all');
 
   const unitsQ = useQuery({ queryKey: ['mil-units'], queryFn: () => militaryApi.units() });
@@ -64,11 +73,11 @@ export default function CommandPage() {
   }, [allThreats, classFilter]);
 
   const tiles = [
-    { label: 'Units', value: stats.units, color: 'text-cyan-400', icon: Users },
-    { label: 'Ready', value: stats.units_ready, color: 'text-emerald-400', icon: Shield },
-    { label: 'Threats', value: stats.threats, color: 'text-orange-400', icon: Radar },
-    { label: 'Critical', value: stats.critical_threats, color: 'text-red-400', icon: AlertTriangle },
-    { label: 'Active Ops', value: stats.active_missions, color: 'text-violet-400', icon: Flag },
+    { label: t('command_tile_units'), value: stats.units, color: 'text-cyan-400', icon: Users },
+    { label: t('command_tile_ready'), value: stats.units_ready, color: 'text-emerald-400', icon: Shield },
+    { label: t('command_tile_threats'), value: stats.threats, color: 'text-orange-400', icon: Radar },
+    { label: t('command_tile_critical'), value: stats.critical_threats, color: 'text-red-400', icon: AlertTriangle },
+    { label: t('command_tile_active_ops'), value: stats.active_missions, color: 'text-violet-400', icon: Flag },
   ];
 
   return (
@@ -79,28 +88,28 @@ export default function CommandPage() {
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div>
               <h1 className="text-lg font-bold font-mono tracking-wide text-white uppercase flex items-center gap-2">
-                <Crosshair size={18} className="text-cyan-400" /> Command Post — COP
+                <Crosshair size={18} className="text-cyan-400" /> {t('command_title')}
               </h1>
               <p className="text-gray-500 text-xs font-mono mt-0.5">
-                Common Operating Picture · friendly units, threat tracks and the operations board.
+                {t('command_subtitle')}
               </p>
             </div>
             {offline && (
               <span className="px-1.5 py-0.5 rounded bg-yellow-500/10 text-yellow-500 border border-yellow-500/20 text-[10px] font-mono">
-                DEMO DATA (API offline)
+                {t('common_demo_data_badge')}
               </span>
             )}
           </div>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-            {tiles.map((t) => {
-              const Icon = t.icon;
+            {tiles.map((tile) => {
+              const Icon = tile.icon;
               return (
-                <div key={t.label} className="bg-[#0e1220]/70 border border-gray-800/70 rounded-xl p-3">
+                <div key={tile.label} className="bg-[#0e1220]/70 border border-gray-800/70 rounded-xl p-3">
                   <div className="flex items-center justify-between">
-                    <span className="text-xxs font-mono text-gray-500 uppercase tracking-wider">{t.label}</span>
+                    <span className="text-xxs font-mono text-gray-500 uppercase tracking-wider">{tile.label}</span>
                     <Icon size={13} />
                   </div>
-                  <div className={`text-2xl font-bold font-mono mt-1 ${t.color}`}>{t.value}</div>
+                  <div className={`text-2xl font-bold font-mono mt-1 ${tile.color}`}>{tile.value}</div>
                 </div>
               );
             })}
@@ -114,10 +123,10 @@ export default function CommandPage() {
             <CopMap units={units} threats={threats} />
             {/* legend */}
             <div className="absolute bottom-3 left-3 z-[500] bg-black/70 border border-gray-800 rounded-xl px-3 py-2 text-[10px] font-mono space-y-1">
-              <div className="flex items-center gap-2 text-cyan-400"><span className="w-2.5 h-2.5 rounded-full bg-cyan-500 inline-block" /> Friendly</div>
-              <div className="flex items-center gap-2 text-red-400"><span className="w-2.5 h-2.5 rounded-full bg-red-500 inline-block" /> Hostile</div>
-              <div className="flex items-center gap-2 text-amber-400"><span className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block" /> Suspect</div>
-              <div className="flex items-center gap-2 text-yellow-400"><span className="w-2.5 h-2.5 rounded-full bg-yellow-500 inline-block" /> Unknown</div>
+              <div className="flex items-center gap-2 text-cyan-400"><span className="w-2.5 h-2.5 rounded-full bg-cyan-500 inline-block" /> {t('command_legend_friendly')}</div>
+              <div className="flex items-center gap-2 text-red-400"><span className="w-2.5 h-2.5 rounded-full bg-red-500 inline-block" /> {t('command_legend_hostile')}</div>
+              <div className="flex items-center gap-2 text-amber-400"><span className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block" /> {t('command_legend_suspect')}</div>
+              <div className="flex items-center gap-2 text-yellow-400"><span className="w-2.5 h-2.5 rounded-full bg-yellow-500 inline-block" /> {t('command_legend_unknown')}</div>
             </div>
           </div>
 
@@ -127,44 +136,44 @@ export default function CommandPage() {
             <div className="p-4 border-b border-gray-800/60">
               <div className="flex items-center justify-between mb-2">
                 <h2 className="text-xs font-bold font-mono uppercase tracking-wider text-gray-300 flex items-center gap-2">
-                  <Target size={14} className="text-red-400" /> Threat Board
+                  <Target size={14} className="text-red-400" /> {t('command_threat_board_title')}
                 </h2>
                 <select value={classFilter} onChange={(e) => setClassFilter(e.target.value)}
                   className="bg-gray-950 border border-gray-800 rounded-lg px-2 py-1 text-[10px] text-gray-300 focus:outline-none font-mono capitalize">
-                  <option value="all">all</option>
-                  <option value="hostile">hostile</option>
-                  <option value="suspect">suspect</option>
-                  <option value="unknown">unknown</option>
+                  <option value="all">{t('command_filter_all')}</option>
+                  <option value="hostile">{t('command_filter_hostile')}</option>
+                  <option value="suspect">{t('command_filter_suspect')}</option>
+                  <option value="unknown">{t('command_filter_unknown')}</option>
                 </select>
               </div>
               <div className="space-y-2">
-                {threats.map((t) => (
-                  <div key={t.id} className="bg-[#0e1220]/60 border border-gray-800/50 rounded-xl p-3">
+                {threats.map((th) => (
+                  <div key={th.id} className="bg-[#0e1220]/60 border border-gray-800/50 rounded-xl p-3">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="text-xs font-bold font-mono text-gray-200 truncate">{t.designation}</span>
-                      <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded border shrink-0 uppercase ${LEVEL_STYLE[t.threat_level]}`}>
-                        {t.threat_level}
+                      <span className="text-xs font-bold font-mono text-gray-200 truncate">{th.designation}</span>
+                      <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded border shrink-0 uppercase ${LEVEL_STYLE[th.threat_level]}`}>
+                        {th.threat_level}
                       </span>
                     </div>
                     <div className="text-xxs font-mono text-gray-500 mt-1 flex items-center justify-between">
-                      <span>{t.type} · {t.speed} km/h · hdg {t.heading}°</span>
-                      <span>{timeAgo(t.last_seen)} ago</span>
+                      <span>{th.type} · {th.speed} {t('command_speed_unit')} · {t('command_heading_label')} {th.heading}°</span>
+                      <span>{timeAgo(th.last_seen)} {t('command_ago_suffix')}</span>
                     </div>
-                    {t.entity_id && (
-                      <Link href={`/entity/${t.entity_id}`} className="text-[10px] font-mono text-cyan-400 hover:underline flex items-center gap-1 mt-1.5">
-                        linked intel: {t.entity_id} <ArrowRight size={10} />
+                    {th.entity_id && (
+                      <Link href={`/entity/${th.entity_id}`} className="text-[10px] font-mono text-cyan-400 hover:underline flex items-center gap-1 mt-1.5">
+                        {t('command_linked_intel_prefix')} {th.entity_id} <ArrowRight size={10} />
                       </Link>
                     )}
                   </div>
                 ))}
-                {threats.length === 0 && <p className="text-xs text-gray-600 font-mono py-4 text-center">No tracks.</p>}
+                {threats.length === 0 && <p className="text-xs text-gray-600 font-mono py-4 text-center">{t('command_no_tracks')}</p>}
               </div>
             </div>
 
             {/* Missions */}
             <div className="p-4">
               <h2 className="text-xs font-bold font-mono uppercase tracking-wider text-gray-300 flex items-center gap-2 mb-2">
-                <Flag size={14} className="text-violet-400" /> Operations Board
+                <Flag size={14} className="text-violet-400" /> {t('command_ops_board_title')}
               </h2>
               <div className="space-y-2">
                 {missions.map((m) => (
@@ -188,7 +197,7 @@ export default function CommandPage() {
                     </div>
                   </div>
                 ))}
-                {missions.length === 0 && <p className="text-xs text-gray-600 font-mono py-4 text-center">No operations.</p>}
+                {missions.length === 0 && <p className="text-xs text-gray-600 font-mono py-4 text-center">{t('command_no_operations')}</p>}
               </div>
             </div>
           </div>

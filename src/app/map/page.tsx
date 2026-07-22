@@ -6,17 +6,25 @@ import WorkspaceLayout from '../../components/layout/WorkspaceLayout';
 import { mockEntities, type Entity } from '../../data/mockEntities';
 import { mockSensors } from '../../data/mockSensors';
 import { entitiesApi, sensorsApi } from '../../lib/api';
+import { useT } from '../../lib/i18n';
 import type { GeoPoint, SensorPoint } from '../../components/map/GeoMap';
 import { Map as MapIcon, Filter, MapPin, Cctv } from 'lucide-react';
 
-// Leaflet touches `window`, so the map must render client-side only.
+// Leaflet touches `window`, so the map must render client-side only. This is
+// rendered by React as the dynamic-import fallback, so it's a normal
+// function component and may use hooks.
+function MapLoading() {
+  const t = useT();
+  return (
+    <div className="h-full w-full flex items-center justify-center text-gray-500 font-mono text-xs bg-[#07090F]">
+      {t('map_loading')}
+    </div>
+  );
+}
+
 const GeoMap = dynamic(() => import('../../components/map/GeoMap'), {
   ssr: false,
-  loading: () => (
-    <div className="h-full w-full flex items-center justify-center text-gray-500 font-mono text-xs bg-[#07090F]">
-      Initializing geospatial layer…
-    </div>
-  ),
+  loading: () => <MapLoading />,
 });
 
 function toPoints(entities: Entity[]): GeoPoint[] {
@@ -35,6 +43,7 @@ function toPoints(entities: Entity[]): GeoPoint[] {
 }
 
 export default function MapPage() {
+  const t = useT();
   const [typeFilter, setTypeFilter] = useState('all');
   const [showSensors, setShowSensors] = useState(true);
 
@@ -76,10 +85,10 @@ export default function MapPage() {
         <div className="px-6 pt-5 pb-3 border-b border-gray-800/60 bg-[#0c0e17]/60 flex items-center justify-between gap-4 flex-wrap z-[500]">
           <div>
             <h1 className="text-lg font-bold font-mono tracking-wide text-white uppercase flex items-center gap-2">
-              <MapIcon size={17} className="text-cyan-400" /> Geospatial Map
+              <MapIcon size={17} className="text-cyan-400" /> {t('nav_map')}
             </h1>
             <p className="text-gray-500 text-xs font-mono mt-0.5">
-              Correlated geo coordinates of monitored entities.
+              {t('map_subtitle')}
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -91,9 +100,9 @@ export default function MapPage() {
               onChange={(e) => setTypeFilter(e.target.value)}
               className="bg-gray-950 border border-gray-800 rounded-xl px-3 py-1.5 text-xs text-gray-300 focus:outline-none font-mono capitalize"
             >
-              <option value="all">All types</option>
-              {types.map((t) => (
-                <option key={t} value={t}>{t}</option>
+              <option value="all">{t('common_all_types')}</option>
+              {types.map((ty) => (
+                <option key={ty} value={ty}>{ty}</option>
               ))}
             </select>
             <button
@@ -104,15 +113,15 @@ export default function MapPage() {
                   : 'text-gray-500 border-gray-800 bg-gray-950'
               }`}
             >
-              <Cctv size={13} /> Sensors
+              <Cctv size={13} /> {t('map_sensors_btn')}
             </button>
             <span className="text-[10px] font-mono text-gray-600 flex items-center gap-2">
               {usingFallback && (
                 <span className="px-1.5 py-0.5 rounded bg-yellow-500/10 text-yellow-500 border border-yellow-500/20">
-                  DEMO DATA (API offline)
+                  {t('common_demo_data_badge')}
                 </span>
               )}
-              <span className="flex items-center gap-1"><MapPin size={11} /> {points.length} pins · {sensors.length} sensors</span>
+              <span className="flex items-center gap-1"><MapPin size={11} /> {points.length} {t('map_pins_label')} · {sensors.length} {t('map_sensors_label')}</span>
             </span>
           </div>
         </div>

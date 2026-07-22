@@ -3,24 +3,26 @@ import React, { useRef, useState, useEffect } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import WorkspaceLayout from '../../components/layout/WorkspaceLayout';
 import { aiApi, type ChatTurn } from '../../lib/api';
+import { useT } from '../../lib/i18n';
 import { Bot, Send, User, Sparkles, Cpu, Cloud, CircleOff } from 'lucide-react';
 
-const SUGGESTIONS = [
-  'Give me a situation overview',
-  'What are the current critical threats?',
-  'Any open security incidents?',
-  'How many sensors are online?',
-];
+const SUGGESTION_KEYS = [
+  'assistant_suggestion_1',
+  'assistant_suggestion_2',
+  'assistant_suggestion_3',
+  'assistant_suggestion_4',
+] as const;
 
 interface Msg extends ChatTurn {
   source?: string;
 }
 
 function SourceBadge({ source }: { source: string }) {
+  const t = useT();
   const local = source.startsWith('local');
   const claude = source === 'claude';
   const Icon = local ? Cpu : claude ? Cloud : CircleOff;
-  const label = local ? source.replace('local:', 'local · ') : claude ? 'Claude' : 'offline';
+  const label = local ? source.replace('local:', `${t('assistant_source_local_prefix')} · `) : claude ? t('assistant_source_claude') : t('assistant_source_offline');
   const cls = local
     ? 'text-emerald-400 border-emerald-500/30 bg-emerald-500/10'
     : claude
@@ -34,6 +36,7 @@ function SourceBadge({ source }: { source: string }) {
 }
 
 export default function AssistantPage() {
+  const t = useT();
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState('');
   const [historyLoaded, setHistoryLoaded] = useState(false);
@@ -71,7 +74,7 @@ export default function AssistantPage() {
       setMessages((prev) => [...prev, { role: 'assistant', content: res.reply, source: res.source }]);
     },
     onError: () => {
-      setMessages((prev) => [...prev, { role: 'assistant', content: 'Assistant is unavailable right now.', source: 'simulated' }]);
+      setMessages((prev) => [...prev, { role: 'assistant', content: t('assistant_unavailable_error'), source: 'simulated' }]);
     },
   });
 
@@ -93,10 +96,10 @@ export default function AssistantPage() {
         {/* Header */}
         <div className="px-6 pt-5 pb-3 border-b border-gray-800/60">
           <h1 className="text-lg font-bold font-mono tracking-wide text-white uppercase flex items-center gap-2">
-            <Bot size={18} className="text-cyan-400" /> AI Analyst
+            <Bot size={18} className="text-cyan-400" /> {t('nav_assistant')}
           </h1>
           <p className="text-gray-500 text-xs font-mono mt-0.5">
-            Ask about entities, threats, sensors, incidents and the operating picture — grounded in live platform data.
+            {t('assistant_subtitle')}
           </p>
         </div>
 
@@ -108,16 +111,16 @@ export default function AssistantPage() {
                 <Sparkles size={26} />
               </div>
               <p className="text-sm text-gray-400 font-mono max-w-sm">
-                I&apos;m your intelligence analyst assistant. Try one of these:
+                {t('assistant_empty_intro')}
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full max-w-lg">
-                {SUGGESTIONS.map((s) => (
+                {SUGGESTION_KEYS.map((key) => (
                   <button
-                    key={s}
-                    onClick={() => send(s)}
+                    key={key}
+                    onClick={() => send(t(key))}
                     className="text-left text-xs font-mono text-gray-300 bg-[#0e1220]/60 border border-gray-800/60 hover:border-cyan-500/40 rounded-xl px-3 py-2.5 transition-all"
                   >
-                    {s}
+                    {t(key)}
                   </button>
                 ))}
               </div>
@@ -167,7 +170,7 @@ export default function AssistantPage() {
             <input
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Ask the analyst assistant…"
+              placeholder={t('assistant_placeholder')}
               className="flex-1 bg-transparent text-sm text-gray-200 placeholder-gray-600 focus:outline-none font-mono"
             />
             <button
@@ -179,7 +182,7 @@ export default function AssistantPage() {
             </button>
           </form>
           <p className="text-[10px] text-gray-600 font-mono mt-2 text-center">
-            Runs locally via Ollama if available, else Claude, else an offline data summarizer.
+            {t('assistant_footer_note')}
           </p>
         </div>
       </div>

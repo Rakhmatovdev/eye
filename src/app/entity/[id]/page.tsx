@@ -19,6 +19,21 @@ import type { LucideIcon } from 'lucide-react';
 
 const ENTITY_TYPES: EntityType[] = ['person', 'organization', 'vehicle', 'location', 'phone', 'document', 'transaction'];
 const CLASSIFICATIONS: ClassificationLevel[] = ['public', 'internal', 'confidential', 'secret'];
+const ENTITY_TYPE_KEY: Record<EntityType, TKey> = {
+  person: 'entity_type_person',
+  organization: 'entity_type_organization',
+  vehicle: 'entity_type_vehicle',
+  location: 'entity_type_location',
+  phone: 'entity_type_phone',
+  document: 'entity_type_document',
+  transaction: 'entity_type_transaction',
+};
+const CLASSIFICATION_KEY: Record<ClassificationLevel, TKey> = {
+  public: 'entity_class_public',
+  internal: 'entity_class_internal',
+  confidential: 'entity_class_confidential',
+  secret: 'entity_class_secret',
+};
 
 export default function EntityDossierPage() {
   const params = useParams();
@@ -51,7 +66,7 @@ export default function EntityDossierPage() {
       setShowEdit(false);
       setActionError('');
     },
-    onError: (err) => setActionError(apiErrorMessage(err, 'Failed to update entity.')),
+    onError: (err) => setActionError(apiErrorMessage(err, t('entity_update_error'))),
   });
 
   const deleteM = useMutation({
@@ -61,7 +76,7 @@ export default function EntityDossierPage() {
       router.push('/search');
     },
     onError: (err) => {
-      setActionError(apiErrorMessage(err, 'Failed to delete entity.'));
+      setActionError(apiErrorMessage(err, t('entity_delete_error')));
       setShowDeleteConfirm(false);
     },
   });
@@ -71,9 +86,9 @@ export default function EntityDossierPage() {
       <WorkspaceLayout>
         <div className="h-full flex flex-col items-center justify-center text-gray-500 gap-3 font-mono">
           <AlertCircle size={30} />
-          <p className="text-sm">Entity <span className="text-gray-300">{id}</span> not found.</p>
+          <p className="text-sm">{t('entity_not_found_prefix')} <span className="text-gray-300">{id}</span> {t('entity_not_found_suffix')}</p>
           <Link href="/search" className="text-cyan-400 text-xs hover:underline flex items-center gap-1">
-            <ArrowLeft size={12} /> Back to search
+            <ArrowLeft size={12} /> {t('entity_back_to_search')}
           </Link>
         </div>
       </WorkspaceLayout>
@@ -91,7 +106,7 @@ export default function EntityDossierPage() {
     <WorkspaceLayout>
       <div className="p-6 md:p-8 space-y-6 h-full overflow-y-auto max-w-5xl mx-auto">
         <Link href="/search" className="text-gray-500 text-xs hover:text-cyan-400 flex items-center gap-1 font-mono w-fit">
-          <ArrowLeft size={12} /> back
+          <ArrowLeft size={12} /> {t('entity_back')}
         </Link>
 
         {/* Identity header */}
@@ -105,8 +120,8 @@ export default function EntityDossierPage() {
               <h1 className="text-2xl font-bold text-white font-mono">{entity.name}</h1>
               <div className="flex items-center gap-3 mt-1 text-xxs font-mono text-gray-500">
                 <span className="flex items-center gap-1"><ShieldAlert size={11} /> {entity.classification}</span>
-                <span>id: {entity.id}</span>
-                {entity.source && <span>src: {entity.source}</span>}
+                <span>{t('entity_id_prefix')} {entity.id}</span>
+                {entity.source && <span>{t('entity_src_prefix')} {entity.source}</span>}
               </div>
             </div>
           </div>
@@ -127,7 +142,7 @@ export default function EntityDossierPage() {
             </div>
             {entity.risk_score != null && (
               <div className="text-right">
-                <div className="text-[9px] font-mono uppercase tracking-widest text-gray-500 flex items-center gap-1 justify-end"><Gauge size={11} /> risk</div>
+                <div className="text-[9px] font-mono uppercase tracking-widest text-gray-500 flex items-center gap-1 justify-end"><Gauge size={11} /> {t('entity_risk_label')}</div>
                 <div className={`text-3xl font-bold font-mono ${
                   entity.risk_score >= 80 ? 'text-red-400' : entity.risk_score >= 50 ? 'text-amber-400' : 'text-emerald-400'
                 }`}>{entity.risk_score}</div>
@@ -144,7 +159,7 @@ export default function EntityDossierPage() {
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Attributes */}
-          <Section title="Attributes" icon={AlertCircle}>
+          <Section title={t('entity_section_attributes')} icon={AlertCircle}>
             <div className="grid grid-cols-1 gap-1.5">
               {Object.entries(entity.properties).map(([k, v]) => (
                 <div key={k} className="flex justify-between text-xs font-mono border-b border-gray-800/40 py-1.5">
@@ -154,7 +169,7 @@ export default function EntityDossierPage() {
               ))}
               {entity.geo && (
                 <div className="flex justify-between text-xs font-mono py-1.5">
-                  <span className="text-gray-500 flex items-center gap-1"><MapPin size={11} /> location</span>
+                  <span className="text-gray-500 flex items-center gap-1"><MapPin size={11} /> {t('entity_location_label')}</span>
                   <span className="text-gray-300">{entity.geo.lat.toFixed(4)}, {entity.geo.lng.toFixed(4)}</span>
                 </div>
               )}
@@ -162,9 +177,9 @@ export default function EntityDossierPage() {
           </Section>
 
           {/* Sightings — the "find person" trace */}
-          <Section title={`Sightings (${sightings.length})`} icon={Cctv}>
+          <Section title={`${t('entity_section_sightings')} (${sightings.length})`} icon={Cctv}>
             {sightings.length === 0 ? (
-              <Empty text="No sensor detections for this entity." />
+              <Empty text={t('entity_empty_sightings')} />
             ) : (
               <div className="space-y-2">
                 {sightings.map((d) => (
@@ -189,9 +204,9 @@ export default function EntityDossierPage() {
           </Section>
 
           {/* Connections */}
-          <Section title={`Connections (${neighbors.length})`} icon={Share2}>
+          <Section title={`${t('entity_section_connections')} (${neighbors.length})`} icon={Share2}>
             {neighbors.length === 0 ? (
-              <Empty text="No linked entities." />
+              <Empty text={t('entity_empty_connections')} />
             ) : (
               <div className="flex flex-wrap gap-2">
                 {neighbors.map((n) => (
@@ -206,9 +221,9 @@ export default function EntityDossierPage() {
           </Section>
 
           {/* Timeline */}
-          <Section title={`Timeline (${events.length})`} icon={Clock}>
+          <Section title={`${t('entity_section_timeline')} (${events.length})`} icon={Clock}>
             {events.length === 0 ? (
-              <Empty text="No recorded events." />
+              <Empty text={t('entity_empty_timeline')} />
             ) : (
               <div className="space-y-2">
                 {[...events].sort((a, b) => +new Date(b.timestamp) - +new Date(a.timestamp)).map((ev) => (
@@ -239,8 +254,8 @@ export default function EntityDossierPage() {
 
       {showDeleteConfirm && (
         <ConfirmDialog
-          title="Delete entity?"
-          message={`This permanently deletes "${entity.name}" and its relationships. This cannot be undone.`}
+          title={t('entity_delete_title')}
+          message={`${t('entity_delete_message_prefix')}${entity.name}${t('entity_delete_message_suffix')}`}
           isPending={deleteM.isPending}
           onCancel={() => setShowDeleteConfirm(false)}
           onConfirm={() => deleteM.mutate()}
@@ -311,10 +326,10 @@ function EditEntityModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
       <div className="w-full max-w-lg bg-[#0c0e17] border border-gray-800 rounded-2xl p-6 space-y-4 max-h-[85vh] overflow-y-auto">
-        <h2 className="text-sm font-bold font-mono uppercase tracking-wide text-white">{t('common_edit')} entity</h2>
+        <h2 className="text-sm font-bold font-mono uppercase tracking-wide text-white">{t('common_edit')} {t('entity_edit_modal_suffix')}</h2>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-xxs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Label</label>
+            <label className="block text-xxs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">{t('entity_field_label')}</label>
             <input
               value={label}
               onChange={(e) => setLabel(e.target.value)}
@@ -324,26 +339,26 @@ function EditEntityModal({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xxs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Type</label>
+              <label className="block text-xxs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">{t('entity_field_type')}</label>
               <select
                 value={type}
                 onChange={(e) => setType(e.target.value)}
                 className="w-full px-3 py-2 bg-gray-950 border border-gray-800 rounded-xl text-xs text-gray-200 focus:outline-none"
               >
                 {ENTITY_TYPES.map((tp) => (
-                  <option key={tp} value={tp}>{tp}</option>
+                  <option key={tp} value={tp}>{t(ENTITY_TYPE_KEY[tp])}</option>
                 ))}
               </select>
             </div>
             <div>
-              <label className="block text-xxs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Classification</label>
+              <label className="block text-xxs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">{t('entity_field_classification')}</label>
               <select
                 value={classification}
                 onChange={(e) => setClassification(e.target.value)}
                 className="w-full px-3 py-2 bg-gray-950 border border-gray-800 rounded-xl text-xs text-gray-200 focus:outline-none"
               >
                 {CLASSIFICATIONS.map((c) => (
-                  <option key={c} value={c}>{c}</option>
+                  <option key={c} value={c}>{t(CLASSIFICATION_KEY[c])}</option>
                 ))}
               </select>
             </div>
@@ -351,9 +366,9 @@ function EditEntityModal({
 
           <div>
             <div className="flex items-center justify-between mb-1.5">
-              <label className="block text-xxs font-semibold text-gray-500 uppercase tracking-wider">Properties</label>
+              <label className="block text-xxs font-semibold text-gray-500 uppercase tracking-wider">{t('entity_field_properties')}</label>
               <button type="button" onClick={addRow} className="flex items-center gap-1 text-[10px] text-cyan-400 hover:underline">
-                <Plus size={11} /> Add
+                <Plus size={11} /> {t('entity_add_btn')}
               </button>
             </div>
             <div className="space-y-2">
@@ -362,13 +377,13 @@ function EditEntityModal({
                   <input
                     value={row.key}
                     onChange={(e) => updateRow(i, { key: e.target.value })}
-                    placeholder="key"
+                    placeholder={t('entity_key_placeholder')}
                     className="w-1/3 px-2 py-1.5 bg-gray-950 border border-gray-800 rounded-lg text-xxs text-gray-300 focus:outline-none"
                   />
                   <input
                     value={row.value}
                     onChange={(e) => updateRow(i, { value: e.target.value })}
-                    placeholder="value"
+                    placeholder={t('entity_value_placeholder')}
                     className="flex-1 px-2 py-1.5 bg-gray-950 border border-gray-800 rounded-lg text-xxs text-gray-300 focus:outline-none"
                   />
                   <button type="button" onClick={() => removeRow(i)} className="p-1.5 text-gray-600 hover:text-red-400">
@@ -376,7 +391,7 @@ function EditEntityModal({
                   </button>
                 </div>
               ))}
-              {rows.length === 0 && <p className="text-xxs text-gray-600 font-mono">No properties.</p>}
+              {rows.length === 0 && <p className="text-xxs text-gray-600 font-mono">{t('entity_no_properties')}</p>}
             </div>
           </div>
 

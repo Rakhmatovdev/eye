@@ -9,6 +9,7 @@
     "module": "esnext",
     "moduleResolution": "bundler",
     "resolveJsonModule": true,
+    "types": ["@testing-library/jest-dom", "jest", "node"],
     "isolatedModules": true,
     "jsx": "preserve",
     "incremental": true,

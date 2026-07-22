@@ -4,10 +4,12 @@ import { useQuery } from '@tanstack/react-query';
 import WorkspaceLayout from '../../components/layout/WorkspaceLayout';
 import { mockEntities, type Entity } from '../../data/mockEntities';
 import { entitiesApi } from '../../lib/api';
+import { useT } from '../../lib/i18n';
 import { Search as SearchIcon, Filter, Eye, AlertCircle } from 'lucide-react';
 import Link from 'next/link';
 
 export default function SearchPage() {
+  const t = useT();
   const [query, setQuery] = useState('');
   const [selectedType, setSelectedType] = useState('all');
   const [selectedClassification, setSelectedClassification] = useState('all');
@@ -43,8 +45,8 @@ export default function SearchPage() {
         
         {/* Header */}
         <div>
-          <h1 className="text-xl font-bold font-mono tracking-wide text-white uppercase">Global Entity Discovery</h1>
-          <p className="text-gray-500 text-xs font-mono mt-0.5">Search across integrated databases, communications registries, and geographic handshakes.</p>
+          <h1 className="text-xl font-bold font-mono tracking-wide text-white uppercase">{t('search_title')}</h1>
+          <p className="text-gray-500 text-xs font-mono mt-0.5">{t('search_subtitle')}</p>
         </div>
 
         {/* Search Input */}
@@ -54,7 +56,7 @@ export default function SearchPage() {
           </span>
           <input
             type="text"
-            placeholder="Search by entity name, tag, passport ID, phone, alias, or citizenship..."
+            placeholder={t('search_placeholder')}
             value={query}
             onChange={e => setQuery(e.target.value)}
             className="w-full pl-11 pr-4 py-3 bg-[#0c0e17] border border-gray-800 rounded-2xl text-sm text-gray-300 placeholder-gray-600 focus:outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/30 transition-all font-mono"
@@ -65,7 +67,7 @@ export default function SearchPage() {
         <div className="flex flex-wrap gap-4 items-center bg-[#0c0e17]/40 p-4 border border-gray-800/60 rounded-2xl">
           <div className="flex items-center gap-2 text-xs font-mono text-gray-500 uppercase tracking-wider">
             <Filter size={14} />
-            <span>Filters</span>
+            <span>{t('search_filters_label')}</span>
           </div>
 
           {/* Type Filter */}
@@ -74,14 +76,14 @@ export default function SearchPage() {
             onChange={e => setSelectedType(e.target.value)}
             className="bg-gray-950 border border-gray-800 rounded-xl px-3 py-1.5 text-xs text-gray-300 focus:outline-none font-mono"
           >
-            <option value="all">All Types</option>
-            <option value="person">Persons</option>
-            <option value="organization">Organizations</option>
-            <option value="phone">Phone Numbers</option>
-            <option value="location">Locations</option>
-            <option value="vehicle">Vehicles</option>
-            <option value="document">Documents</option>
-            <option value="transaction">Transactions</option>
+            <option value="all">{t('search_type_all')}</option>
+            <option value="person">{t('search_type_person')}</option>
+            <option value="organization">{t('search_type_organization')}</option>
+            <option value="phone">{t('search_type_phone')}</option>
+            <option value="location">{t('search_type_location')}</option>
+            <option value="vehicle">{t('search_type_vehicle')}</option>
+            <option value="document">{t('search_type_document')}</option>
+            <option value="transaction">{t('search_type_transaction')}</option>
           </select>
 
           {/* Classification Filter */}
@@ -90,20 +92,20 @@ export default function SearchPage() {
             onChange={e => setSelectedClassification(e.target.value)}
             className="bg-gray-950 border border-gray-800 rounded-xl px-3 py-1.5 text-xs text-gray-300 focus:outline-none font-mono"
           >
-            <option value="all">All Classifications</option>
-            <option value="public">Public</option>
-            <option value="internal">Internal</option>
-            <option value="confidential">Confidential</option>
-            <option value="secret">Secret</option>
+            <option value="all">{t('search_class_all')}</option>
+            <option value="public">{t('search_class_public')}</option>
+            <option value="internal">{t('search_class_internal')}</option>
+            <option value="confidential">{t('search_class_confidential')}</option>
+            <option value="secret">{t('search_class_secret')}</option>
           </select>
 
           <span className="text-[10px] font-mono text-gray-600 ml-auto flex items-center gap-2">
             {usingFallback && (
               <span className="px-1.5 py-0.5 rounded bg-yellow-500/10 text-yellow-500 border border-yellow-500/20">
-                DEMO DATA (API offline)
+                {t('common_demo_data_badge')}
               </span>
             )}
-            Showing {filteredEntities.length} entities
+            {t('search_showing_prefix')} {filteredEntities.length} {t('search_showing_suffix')}
           </span>
         </div>
 
@@ -146,7 +148,7 @@ export default function SearchPage() {
                     className="flex items-center gap-1 text-cyan-400 hover:underline"
                   >
                     <Eye size={12} />
-                    <span>360° Profile</span>
+                    <span>{t('search_profile_link')}</span>
                   </Link>
                 </div>
               </div>
@@ -156,7 +158,7 @@ export default function SearchPage() {
           {filteredEntities.length === 0 && (
             <div className="col-span-2 py-12 flex flex-col items-center justify-center text-center text-gray-500 gap-2 font-mono">
               <AlertCircle size={28} />
-              <p className="text-xs">No matching entities found in intelligence registries.</p>
+              <p className="text-xs">{t('search_no_results')}</p>
             </div>
           )}
         </div>

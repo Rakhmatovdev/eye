@@ -17,9 +17,10 @@ interface AuthState {
   login: (user: AuthUser, token: string, refreshToken?: string | null) => void;
   logout: () => void;
   updateUser: (patch: Partial<AuthUser>) => void;
-  // Swaps in a freshly-minted access token after a silent refresh, without
-  // touching the user/refresh token or forcing a re-render of unrelated state.
-  setAccessToken: (token: string) => void;
+  // Swaps in a freshly-minted access token after a silent refresh. The backend
+  // rotates the refresh token on every /auth/refresh, so the new one must be
+  // stored too — the old one is already revoked server-side.
+  setAccessToken: (token: string, refreshToken?: string | null) => void;
 }
 
 const STORAGE_KEY = 'nexus.auth';
@@ -77,8 +78,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     persist(updated, get().token, get().refreshToken);
     set({ user: updated });
   },
-  setAccessToken: (token) => {
-    persist(get().user, token, get().refreshToken);
-    set({ token });
+  setAccessToken: (token, refreshToken) => {
+    const nextRefresh = refreshToken ?? get().refreshToken;
+    persist(get().user, token, nextRefresh);
+    set({ token, refreshToken: nextRefresh });
   },
 }));

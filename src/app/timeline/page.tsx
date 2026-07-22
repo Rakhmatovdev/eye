@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import WorkspaceLayout from '../../components/layout/WorkspaceLayout';
 import { mockEvents, type TimelineEvent } from '../../data/mockEvents';
 import { timelineApi } from '../../lib/api';
+import { useT } from '../../lib/i18n';
 import { Clock, MapPin, Filter, AlertCircle, Plane, DollarSign, Radio, Users, Milestone, Package, FileText } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -37,6 +38,7 @@ function fmt(ts: string): { date: string; time: string } {
 }
 
 export default function TimelinePage() {
+  const t = useT();
   const [typeFilter, setTypeFilter] = useState('all');
 
   const { data, isError } = useQuery({
@@ -61,10 +63,10 @@ export default function TimelinePage() {
         <div className="flex items-start justify-between gap-4">
           <div>
             <h1 className="text-xl font-bold font-mono tracking-wide text-white uppercase flex items-center gap-2">
-              <Clock size={18} className="text-cyan-400" /> Time Analysis
+              <Clock size={18} className="text-cyan-400" /> {t('nav_timeline')}
             </h1>
             <p className="text-gray-500 text-xs font-mono mt-0.5">
-              Chronological reconstruction of correlated events across monitored entities.
+              {t('timeline_subtitle')}
             </p>
           </div>
         </div>
@@ -72,25 +74,25 @@ export default function TimelinePage() {
         {/* Filter */}
         <div className="flex flex-wrap gap-3 items-center bg-[#0c0e17]/40 p-4 border border-gray-800/60 rounded-2xl">
           <div className="flex items-center gap-2 text-xs font-mono text-gray-500 uppercase tracking-wider">
-            <Filter size={14} /> <span>Event type</span>
+            <Filter size={14} /> <span>{t('timeline_event_type_label')}</span>
           </div>
           <select
             value={typeFilter}
             onChange={(e) => setTypeFilter(e.target.value)}
             className="bg-gray-950 border border-gray-800 rounded-xl px-3 py-1.5 text-xs text-gray-300 focus:outline-none font-mono capitalize"
           >
-            <option value="all">All types</option>
-            {types.map((t) => (
-              <option key={t} value={t}>{t}</option>
+            <option value="all">{t('common_all_types')}</option>
+            {types.map((ty) => (
+              <option key={ty} value={ty}>{ty}</option>
             ))}
           </select>
           <span className="text-[10px] font-mono text-gray-600 ml-auto flex items-center gap-2">
             {usingFallback && (
               <span className="px-1.5 py-0.5 rounded bg-yellow-500/10 text-yellow-500 border border-yellow-500/20">
-                DEMO DATA (API offline)
+                {t('common_demo_data_badge')}
               </span>
             )}
-            {events.length} events
+            {events.length} {t('timeline_events_suffix')}
           </span>
         </div>
 
@@ -122,7 +124,7 @@ export default function TimelinePage() {
                     {ev.location && (
                       <span className="flex items-center gap-1"><MapPin size={11} /> {ev.location}</span>
                     )}
-                    {ev.entity_id && <span className="text-gray-600">entity: {ev.entity_id}</span>}
+                    {ev.entity_id && <span className="text-gray-600">{t('timeline_entity_prefix')} {ev.entity_id}</span>}
                   </div>
                 </div>
               </div>
@@ -132,7 +134,7 @@ export default function TimelinePage() {
           {events.length === 0 && (
             <div className="py-12 flex flex-col items-center justify-center text-center text-gray-500 gap-2 font-mono">
               <AlertCircle size={28} />
-              <p className="text-xs">No events recorded for this filter.</p>
+              <p className="text-xs">{t('timeline_no_events')}</p>
             </div>
           )}
         </div>

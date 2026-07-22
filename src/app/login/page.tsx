@@ -1,6 +1,7 @@
 'use client';
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { Terminal, Key, ShieldAlert, ShieldCheck } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import { authApi } from '../../lib/api';
@@ -118,7 +119,12 @@ export default function LoginPage() {
             >
               {loading ? t('login_submitting') : t('login_submit')}
             </button>
-            <div className="text-center mt-4">
+            <div className="text-center mt-3">
+              <Link href="/forgot-password" className="text-xxs text-gray-500 hover:text-cyan-400 transition-all">
+                {t('login_forgot_link')}
+              </Link>
+            </div>
+            <div className="text-center mt-3">
               <span className="text-[10px] text-gray-600">analyst@platform.io / Analyst123!</span>
             </div>
           </form>

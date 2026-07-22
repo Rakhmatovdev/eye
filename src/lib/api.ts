@@ -212,6 +212,20 @@ export const authApi = {
       new_password: newPassword,
     });
   },
+  // Backend always returns a generic {message} regardless of whether the
+  // email is registered — resetToken/resetLink are only present outside
+  // production (no email sender configured yet).
+  async forgotPassword(email: string): Promise<{ message: string; resetToken?: string; resetLink?: string }> {
+    const res = await apiClient.post<Envelope<{ message: string; reset_token?: string; reset_link?: string }>>(
+      '/auth/forgot-password',
+      { email }
+    );
+    const data = unwrap(res.data);
+    return { message: data.message, resetToken: data.reset_token, resetLink: data.reset_link };
+  },
+  async resetPassword(token: string, newPassword: string): Promise<void> {
+    await apiClient.post('/auth/reset-password', { token, new_password: newPassword });
+  },
 };
 
 /* --------------------------------- MFA ------------------------------------ */

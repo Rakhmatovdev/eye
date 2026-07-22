@@ -72,7 +72,7 @@ async function refreshAccessToken(): Promise<string> {
   }
   // Plain axios (not `apiClient`) so this call never re-enters the response
   // interceptor below and can't recurse into itself on a 401.
-  const res = await axios.post<Envelope<{ access_token: string }>>(
+  const res = await axios.post<Envelope<{ access_token: string; refresh_token?: string }>>(
     `${BASE_PATH}/auth/refresh`,
     { refresh_token: refreshToken },
     { headers: { 'Content-Type': 'application/json' } }
@@ -81,7 +81,9 @@ async function refreshAccessToken(): Promise<string> {
   if (!accessToken) {
     throw new Error('Refresh response missing access_token');
   }
-  useAuthStore.getState().setAccessToken(accessToken);
+  // The backend rotates the refresh token on every refresh — persist the new
+  // one or the next silent refresh would fail against the revoked old token.
+  useAuthStore.getState().setAccessToken(accessToken, res.data?.data?.refresh_token ?? null);
   return accessToken;
 }
 

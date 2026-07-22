@@ -6,7 +6,7 @@ import WorkspaceLayout from '../../components/layout/WorkspaceLayout';
 import ConfirmDialog from '../../components/common/ConfirmDialog';
 import { casesApi } from '../../lib/api';
 import { apiErrorMessage } from '../../lib/apiClient';
-import { useT } from '../../lib/i18n';
+import { useT, type TKey } from '../../lib/i18n';
 import { mockCases, type Case } from '../../data/mockCases';
 import { FolderLock, Share2, User, Boxes, AlertCircle, Trash2 } from 'lucide-react';
 
@@ -23,6 +23,12 @@ const STATUS_STYLE: Record<string, string> = {
   'archived': 'text-gray-600',
 };
 const STATUS_OPTIONS = ['open', 'in-progress', 'closed', 'archived'];
+const STATUS_KEY: Record<string, TKey> = {
+  open: 'cases_status_open',
+  'in-progress': 'cases_status_in_progress',
+  closed: 'cases_status_closed',
+  archived: 'cases_status_archived',
+};
 
 export default function CasesPage() {
   const t = useT();
@@ -40,7 +46,7 @@ export default function CasesPage() {
       setError('');
       queryClient.invalidateQueries({ queryKey: ['cases'] });
     },
-    onError: (err) => setError(apiErrorMessage(err, 'Failed to update case status.')),
+    onError: (err) => setError(apiErrorMessage(err, t('cases_status_update_error'))),
   });
 
   const deleteM = useMutation({
@@ -51,7 +57,7 @@ export default function CasesPage() {
       queryClient.invalidateQueries({ queryKey: ['cases'] });
     },
     onError: (err) => {
-      setError(apiErrorMessage(err, 'Failed to delete case.'));
+      setError(apiErrorMessage(err, t('cases_delete_error')));
       setDeleteTarget(null);
     },
   });
@@ -62,19 +68,19 @@ export default function CasesPage() {
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
             <h1 className="text-xl font-bold font-mono tracking-wide text-white uppercase flex items-center gap-2">
-              <FolderLock size={18} className="text-cyan-400" /> Case Files
+              <FolderLock size={18} className="text-cyan-400" /> {t('nav_cases')}
             </h1>
             <p className="text-gray-500 text-xs font-mono mt-0.5">
-              Investigation folders — grouped entities, ontology links and analytic products.
+              {t('cases_subtitle')}
             </p>
           </div>
           <span className="text-[10px] font-mono text-gray-600 flex items-center gap-2">
             {usingFallback && (
               <span className="px-1.5 py-0.5 rounded bg-yellow-500/10 text-yellow-500 border border-yellow-500/20">
-                DEMO DATA (API offline)
+                {t('common_demo_data_badge')}
               </span>
             )}
-            {cases.length} cases
+            {cases.length} {t('cases_count_suffix')}
           </span>
         </div>
 
@@ -95,7 +101,7 @@ export default function CasesPage() {
                   className={`bg-transparent border border-gray-800/60 rounded-lg px-1.5 py-0.5 text-[9px] font-mono uppercase tracking-widest focus:outline-none ${STATUS_STYLE[c.status] || 'text-gray-500'}`}
                 >
                   {STATUS_OPTIONS.map((s) => (
-                    <option key={s} value={s} className="bg-[#0c0e17] text-gray-200">{s}</option>
+                    <option key={s} value={s} className="bg-[#0c0e17] text-gray-200">{t(STATUS_KEY[s])}</option>
                   ))}
                 </select>
                 <span className={`px-2 py-0.5 rounded text-[8px] font-bold uppercase border ${PRIORITY_STYLE[c.priority] || PRIORITY_STYLE.medium}`}>
@@ -106,10 +112,10 @@ export default function CasesPage() {
               <p className="text-xs text-gray-500 mt-1 leading-relaxed flex-1">{c.description}</p>
               <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-800/40 text-xxs font-mono text-gray-500">
                 <span className="flex items-center gap-1"><User size={11} /> {c.assignee}</span>
-                {c.entityCount > 0 && <span className="flex items-center gap-1"><Boxes size={11} /> {c.entityCount} entities</span>}
+                {c.entityCount > 0 && <span className="flex items-center gap-1"><Boxes size={11} /> {c.entityCount} {t('cases_entities_suffix')}</span>}
                 <div className="flex items-center gap-3">
                   <Link href={`/graph/${c.id}`} className="flex items-center gap-1 text-cyan-400 hover:underline">
-                    <Share2 size={11} /> Open graph
+                    <Share2 size={11} /> {t('cases_open_graph_link')}
                   </Link>
                   <button
                     onClick={() => setDeleteTarget(c)}
@@ -125,7 +131,7 @@ export default function CasesPage() {
           {cases.length === 0 && (
             <div className="col-span-2 py-12 flex flex-col items-center justify-center text-center text-gray-500 gap-2 font-mono">
               <AlertCircle size={28} />
-              <p className="text-xs">No case files yet.</p>
+              <p className="text-xs">{t('cases_no_cases')}</p>
             </div>
           )}
         </div>
@@ -133,8 +139,8 @@ export default function CasesPage() {
 
       {deleteTarget && (
         <ConfirmDialog
-          title="Delete case?"
-          message={`This permanently deletes the case "${deleteTarget.title}". This cannot be undone.`}
+          title={t('cases_delete_title')}
+          message={`${t('cases_delete_message_prefix')}${deleteTarget.title}${t('cases_delete_message_suffix')}`}
           isPending={deleteM.isPending}
           onCancel={() => setDeleteTarget(null)}
           onConfirm={() => deleteM.mutate(deleteTarget.id)}

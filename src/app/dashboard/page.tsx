@@ -3,25 +3,27 @@ import React from 'react';
 import WorkspaceLayout from '../../components/layout/WorkspaceLayout';
 import { useAuthStore } from '../../store/authStore';
 import { useWorkspaceStore } from '../../store/workspaceStore';
-import { 
-  FolderOpen, 
-  MapPin, 
-  Network, 
-  Clock, 
-  ShieldCheck, 
+import { useT } from '../../lib/i18n';
+import {
+  FolderOpen,
+  MapPin,
+  Network,
+  Clock,
+  ShieldCheck,
   Search,
   MessageSquareCode
 } from 'lucide-react';
 import Link from 'next/link';
 
 export default function AnalystDashboard() {
+  const t = useT();
   const user = useAuthStore(state => state.user);
   const activeCaseId = useWorkspaceStore(state => state.activeCaseId);
 
   const stats = [
-    { name: 'Investigation Files', value: '4 Active', icon: FolderOpen, desc: 'Open intelligence cases' },
-    { name: 'Geospatial Points', value: '1,248 Map Pins', icon: MapPin, desc: 'Correlated geo coordinates' },
-    { name: 'Ontology Links', value: '2.4K Mapped Nodes', icon: Network, desc: 'Identified entity edges' },
+    { name: t('dashboard_stat_cases_label'), value: t('dashboard_stat_cases_value'), icon: FolderOpen, desc: t('dashboard_stat_cases_desc') },
+    { name: t('dashboard_stat_geo_label'), value: t('dashboard_stat_geo_value'), icon: MapPin, desc: t('dashboard_stat_geo_desc') },
+    { name: t('dashboard_stat_links_label'), value: t('dashboard_stat_links_value'), icon: Network, desc: t('dashboard_stat_links_desc') },
   ];
 
   const recentActivities = [
@@ -39,10 +41,10 @@ export default function AnalystDashboard() {
           <div className="absolute right-0 top-0 w-80 h-80 bg-cyan-500/5 rounded-full blur-3xl" />
           <div className="space-y-1">
             <h1 className="text-xl font-bold font-mono tracking-wide text-white">
-              Welcome back, Analyst {user?.name.split(' ')[0] || 'John'}
+              {t('dashboard_welcome')} {user?.name.split(' ')[0] || 'John'}
             </h1>
             <p className="text-gray-400 text-xs font-mono">
-              Secure sandbox active. Clearance Level: {user?.clearance || 'SECRET'}
+              {t('dashboard_sandbox_status')} {user?.clearance || 'SECRET'}
             </p>
           </div>
           <Link
@@ -50,7 +52,7 @@ export default function AnalystDashboard() {
             className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl text-xs font-bold font-mono flex items-center gap-2 shadow-lg shadow-cyan-500/10"
           >
             <Search size={14} />
-            <span>Search Registry</span>
+            <span>{t('dashboard_search_registry')}</span>
           </Link>
         </div>
 
@@ -78,8 +80,8 @@ export default function AnalystDashboard() {
           {/* Active Case Files */}
           <div className="bg-[#0e1220]/40 border border-gray-800/60 p-6 rounded-2xl space-y-4">
             <div>
-              <h3 className="text-sm font-bold font-mono text-white tracking-wide uppercase">Active Cases</h3>
-              <p className="text-xxs text-gray-500 font-mono mt-0.5">Assigned files requiring active correlation.</p>
+              <h3 className="text-sm font-bold font-mono text-white tracking-wide uppercase">{t('dashboard_active_cases_title')}</h3>
+              <p className="text-xxs text-gray-500 font-mono mt-0.5">{t('dashboard_active_cases_subtitle')}</p>
             </div>
             
             <div className="space-y-3">
@@ -102,7 +104,9 @@ export default function AnalystDashboard() {
                     c.priority === 'High' ? 'bg-orange-500/10 text-orange-400 border border-orange-500/20' :
                     'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20'
                   }`}>
-                    {c.priority}
+                    {c.priority === 'Critical' ? t('dashboard_priority_critical') :
+                      c.priority === 'High' ? t('dashboard_priority_high') :
+                      t('dashboard_priority_medium')}
                   </span>
                 </Link>
               ))}
@@ -112,8 +116,8 @@ export default function AnalystDashboard() {
           {/* Activity Logs */}
           <div className="bg-[#0e1220]/40 border border-gray-800/60 p-6 rounded-2xl space-y-4">
             <div>
-              <h3 className="text-sm font-bold font-mono text-white tracking-wide uppercase">Live activity feed</h3>
-              <p className="text-xxs text-gray-500 font-mono mt-0.5">Recent entity mappings across cases.</p>
+              <h3 className="text-sm font-bold font-mono text-white tracking-wide uppercase">{t('dashboard_activity_title')}</h3>
+              <p className="text-xxs text-gray-500 font-mono mt-0.5">{t('dashboard_activity_subtitle')}</p>
             </div>
 
             <div className="space-y-4">

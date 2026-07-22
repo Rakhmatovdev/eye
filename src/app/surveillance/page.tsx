@@ -5,6 +5,7 @@ import Link from 'next/link';
 import WorkspaceLayout from '../../components/layout/WorkspaceLayout';
 import { sensorsApi, type Sensor, type Detection } from '../../lib/api';
 import { useLiveFeed } from '../../lib/useLiveFeed';
+import { useT } from '../../lib/i18n';
 import { mockSensors, mockDetections, mockSensorStats } from '../../data/mockSensors';
 import {
   Cctv, Plane, Radar, RadioTower, Video, Signal, Filter, MapPin, ScanFace,
@@ -31,6 +32,7 @@ function timeAgo(ts: string): string {
 }
 
 export default function SurveillancePage() {
+  const t = useT();
   const [typeFilter, setTypeFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [selected, setSelected] = useState<Sensor | null>(null);
@@ -62,12 +64,12 @@ export default function SurveillancePage() {
   const active = selected ?? filtered[0] ?? sensors[0];
 
   const tiles = [
-    { label: 'Sensors', value: stats.total, color: 'text-cyan-400', icon: Video },
-    { label: 'Online', value: stats.online, color: 'text-emerald-400', icon: Activity },
-    { label: 'Degraded', value: stats.degraded, color: 'text-amber-400', icon: Signal },
-    { label: 'Offline', value: stats.offline, color: 'text-red-500', icon: ShieldAlert },
-    { label: 'Hits 24h', value: stats.detections_24h, color: 'text-violet-400', icon: CircleDot },
-    { label: 'Identified', value: stats.identified_hits, color: 'text-fuchsia-400', icon: ScanFace },
+    { label: t('surveillance_tile_sensors'), value: stats.total, color: 'text-cyan-400', icon: Video },
+    { label: t('surveillance_tile_online'), value: stats.online, color: 'text-emerald-400', icon: Activity },
+    { label: t('surveillance_tile_degraded'), value: stats.degraded, color: 'text-amber-400', icon: Signal },
+    { label: t('surveillance_offline_badge'), value: stats.offline, color: 'text-red-500', icon: ShieldAlert },
+    { label: t('surveillance_tile_hits24h'), value: stats.detections_24h, color: 'text-violet-400', icon: CircleDot },
+    { label: t('surveillance_tile_identified'), value: stats.identified_hits, color: 'text-fuchsia-400', icon: ScanFace },
   ];
 
   return (
@@ -77,26 +79,26 @@ export default function SurveillancePage() {
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
             <h1 className="text-lg font-bold font-mono tracking-wide text-white uppercase flex items-center gap-2">
-              <Cctv size={18} className="text-cyan-400" /> Surveillance Network
+              <Cctv size={18} className="text-cyan-400" /> {t('surveillance_title')}
             </h1>
             <p className="text-gray-500 text-xs font-mono mt-0.5">
-              Sensor grid, live feeds and biometric/plate detections across the collection network.
+              {t('surveillance_subtitle')}
             </p>
           </div>
           <div className="flex items-center gap-2">
             {liveStatus === 'live' ? (
               <span className="flex items-center gap-1.5 px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[10px] font-mono uppercase tracking-wider">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" /> Live
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" /> {t('surveillance_live_badge')}
               </span>
             ) : (
               <span className="flex items-center gap-1.5 px-1.5 py-0.5 rounded bg-gray-500/10 text-gray-500 border border-gray-700/40 text-[10px] font-mono uppercase tracking-wider">
                 <span className="w-1.5 h-1.5 rounded-full bg-gray-600" />
-                {liveStatus === 'connecting' ? 'Connecting' : 'Offline'}
+                {liveStatus === 'connecting' ? t('surveillance_connecting_badge') : t('surveillance_offline_badge')}
               </span>
             )}
             {offline && (
               <span className="px-1.5 py-0.5 rounded bg-yellow-500/10 text-yellow-500 border border-yellow-500/20 text-[10px] font-mono">
-                DEMO DATA (API offline)
+                {t('common_demo_data_badge')}
               </span>
             )}
           </div>
@@ -104,15 +106,15 @@ export default function SurveillancePage() {
 
         {/* Stat tiles */}
         <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
-          {tiles.map((t) => {
-            const Icon = t.icon;
+          {tiles.map((tile) => {
+            const Icon = tile.icon;
             return (
-              <div key={t.label} className="bg-[#0e1220]/70 border border-gray-800/70 rounded-2xl p-3">
+              <div key={tile.label} className="bg-[#0e1220]/70 border border-gray-800/70 rounded-2xl p-3">
                 <div className="flex items-center justify-between">
-                  <span className="text-xxs font-mono text-gray-500 uppercase tracking-wider">{t.label}</span>
+                  <span className="text-xxs font-mono text-gray-500 uppercase tracking-wider">{tile.label}</span>
                   <Icon size={13} />
                 </div>
-                <div className={`text-2xl font-bold font-mono mt-1 ${t.color}`}>{t.value}</div>
+                <div className={`text-2xl font-bold font-mono mt-1 ${tile.color}`}>{tile.value}</div>
               </div>
             );
           })}
@@ -129,20 +131,20 @@ export default function SurveillancePage() {
               <Filter size={14} className="text-gray-500" />
               <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}
                 className="bg-gray-950 border border-gray-800 rounded-xl px-3 py-1.5 text-xs text-gray-300 focus:outline-none font-mono capitalize">
-                <option value="all">All types</option>
-                <option value="camera">Camera</option>
-                <option value="drone">Drone / UAV</option>
-                <option value="radar">Radar</option>
-                <option value="sigint">SIGINT</option>
+                <option value="all">{t('common_all_types')}</option>
+                <option value="camera">{t('surveillance_type_camera')}</option>
+                <option value="drone">{t('surveillance_type_drone')}</option>
+                <option value="radar">{t('surveillance_type_radar')}</option>
+                <option value="sigint">{t('surveillance_type_sigint')}</option>
               </select>
               <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}
                 className="bg-gray-950 border border-gray-800 rounded-xl px-3 py-1.5 text-xs text-gray-300 focus:outline-none font-mono capitalize">
-                <option value="all">All statuses</option>
-                <option value="online">Online</option>
-                <option value="degraded">Degraded</option>
-                <option value="offline">Offline</option>
+                <option value="all">{t('surveillance_status_all')}</option>
+                <option value="online">{t('surveillance_tile_online')}</option>
+                <option value="degraded">{t('surveillance_tile_degraded')}</option>
+                <option value="offline">{t('surveillance_offline_badge')}</option>
               </select>
-              <span className="text-[10px] font-mono text-gray-600 ml-auto">{filtered.length} sensors</span>
+              <span className="text-[10px] font-mono text-gray-600 ml-auto">{filtered.length} {t('surveillance_sensors_suffix')}</span>
             </div>
 
             {/* Sensor grid */}
@@ -181,7 +183,7 @@ export default function SurveillancePage() {
           {/* Right: detection feed */}
           <div className="bg-[#0c0e17]/50 border border-gray-800/60 rounded-2xl p-4 h-fit">
             <h2 className="text-xs font-bold font-mono uppercase tracking-wider text-gray-300 flex items-center gap-2 mb-3">
-              <ScanFace size={14} className="text-fuchsia-400" /> Detection Feed
+              <ScanFace size={14} className="text-fuchsia-400" /> {t('surveillance_detection_feed_title')}
             </h2>
             <div className="space-y-2 max-h-[540px] overflow-y-auto pr-1">
               {detections.map((d) => {
@@ -218,7 +220,7 @@ export default function SurveillancePage() {
                 );
               })}
               {detections.length === 0 && (
-                <p className="text-xs text-gray-600 font-mono py-6 text-center">No detections.</p>
+                <p className="text-xs text-gray-600 font-mono py-6 text-center">{t('surveillance_no_detections')}</p>
               )}
             </div>
           </div>
@@ -230,6 +232,7 @@ export default function SurveillancePage() {
 
 // Simulated camera/sensor live feed — a stylised placeholder (no real video).
 function LiveFeed({ sensor }: { sensor: Sensor }) {
+  const t = useT();
   const Icon = SENSOR_ICON[sensor.type] || Video;
   return (
     <div className="relative bg-black border border-gray-800/70 rounded-2xl overflow-hidden aspect-video">
@@ -239,12 +242,12 @@ function LiveFeed({ sensor }: { sensor: Sensor }) {
       <div className="absolute inset-0 bg-gradient-to-br from-cyan-950/20 to-transparent" />
       <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-600 gap-2">
         <Icon size={40} />
-        <span className="text-[10px] font-mono uppercase tracking-widest">simulated feed · {sensor.feed_url}</span>
+        <span className="text-[10px] font-mono uppercase tracking-widest">{t('surveillance_simulated_feed')} · {sensor.feed_url}</span>
       </div>
       {/* HUD overlays */}
       <div className="absolute top-3 left-3 flex items-center gap-2">
         <span className="flex items-center gap-1.5 text-[10px] font-mono text-red-400 bg-black/60 px-2 py-1 rounded">
-          <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" /> REC
+          <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" /> {t('surveillance_rec_badge')}
         </span>
         <span className="text-[10px] font-mono text-gray-300 bg-black/60 px-2 py-1 rounded uppercase">{sensor.type}</span>
       </div>
