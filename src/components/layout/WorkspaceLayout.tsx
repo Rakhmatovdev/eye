@@ -19,6 +19,7 @@ import {
 import { useAuthStore } from '../../store/authStore';
 import { useLocaleStore, type Locale } from '../../store/localeStore';
 import { useT } from '../../lib/i18n';
+import { useHasMounted } from '../../lib/useHasMounted';
 
 interface WorkspaceLayoutProps {
   children: React.ReactNode;
@@ -53,6 +54,9 @@ export default function WorkspaceLayout({ children }: WorkspaceLayoutProps) {
   const logout = useAuthStore(state => state.logout);
   const user = useAuthStore(state => state.user);
   const t = useT();
+  // See useHasMounted.ts: `user` is seeded synchronously from localStorage on
+  // the client, so gating on mount avoids a server/client hydration mismatch.
+  const hasMounted = useHasMounted();
 
   const handleLogout = () => {
     logout();
@@ -117,7 +121,7 @@ export default function WorkspaceLayout({ children }: WorkspaceLayoutProps) {
 
         {/* User Card */}
         <div className="p-3 border-t border-gray-800/60 bg-[#090b12] space-y-3">
-          {user && (
+          {hasMounted && user && (
             <div className="px-2 py-1 space-y-1">
               <div className="flex items-center gap-1 text-[10px] font-bold text-yellow-500 uppercase tracking-widest">
                 <ShieldAlert size={10} />

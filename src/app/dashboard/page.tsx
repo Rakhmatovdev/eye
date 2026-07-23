@@ -4,6 +4,7 @@ import WorkspaceLayout from '../../components/layout/WorkspaceLayout';
 import { useAuthStore } from '../../store/authStore';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { useT } from '../../lib/i18n';
+import { useHasMounted } from '../../lib/useHasMounted';
 import {
   FolderOpen,
   MapPin,
@@ -19,6 +20,13 @@ export default function AnalystDashboard() {
   const t = useT();
   const user = useAuthStore(state => state.user);
   const activeCaseId = useWorkspaceStore(state => state.activeCaseId);
+  // `user` is seeded synchronously from localStorage on the client (see
+  // authStore.ts's loadInitial()), so the server always renders the "no
+  // user yet" defaults below while the client's very first (pre-hydration)
+  // render already has the real values — a text-content hydration mismatch.
+  // Gate on mount so both renders agree until a normal post-mount re-render.
+  const hasMounted = useHasMounted();
+  const displayUser = hasMounted ? user : null;
 
   const stats = [
     { name: t('dashboard_stat_cases_label'), value: t('dashboard_stat_cases_value'), icon: FolderOpen, desc: t('dashboard_stat_cases_desc') },
@@ -41,10 +49,10 @@ export default function AnalystDashboard() {
           <div className="absolute right-0 top-0 w-80 h-80 bg-cyan-500/5 rounded-full blur-3xl" />
           <div className="space-y-1">
             <h1 className="text-xl font-bold font-mono tracking-wide text-white">
-              {t('dashboard_welcome')} {user?.name.split(' ')[0] || 'John'}
+              {t('dashboard_welcome')} {displayUser?.name.split(' ')[0] || 'John'}
             </h1>
             <p className="text-gray-400 text-xs font-mono">
-              {t('dashboard_sandbox_status')} {user?.clearance || 'SECRET'}
+              {t('dashboard_sandbox_status')} {displayUser?.clearance || 'SECRET'}
             </p>
           </div>
           <Link

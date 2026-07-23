@@ -15,7 +15,9 @@ const customJestConfig = {
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1',
   },
-  testPathIgnorePatterns: ['<rootDir>/.next/', '<rootDir>/node_modules/'],
+  // e2e/ holds Playwright specs (run via `playwright test`, not jest) — they
+  // use `test`/`expect` from @playwright/test, which collides with jest's.
+  testPathIgnorePatterns: ['<rootDir>/.next/', '<rootDir>/node_modules/', '<rootDir>/e2e/'],
 };
 
 // createJestConfig is exported this way so next/jest can load the Next.js
