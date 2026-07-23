@@ -1,10 +1,14 @@
 'use client';
 import React from 'react';
+import { useQuery } from '@tanstack/react-query';
 import WorkspaceLayout from '../../components/layout/WorkspaceLayout';
 import { useAuthStore } from '../../store/authStore';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { useT } from '../../lib/i18n';
 import { useHasMounted } from '../../lib/useHasMounted';
+import { patternsApi } from '../../lib/api';
+import { mockPatterns } from '../../data/mockPatterns';
+import { PATTERN_TYPE_KEY, PATTERN_TYPE_ICON, PATTERN_FALLBACK_ICON, scoreColorClass } from '../../lib/patternUi';
 import {
   FolderOpen,
   MapPin,
@@ -12,7 +16,9 @@ import {
   Clock,
   ShieldCheck,
   Search,
-  MessageSquareCode
+  MessageSquareCode,
+  Sparkles,
+  ArrowRight,
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -33,6 +39,13 @@ export default function AnalystDashboard() {
     { name: t('dashboard_stat_geo_label'), value: t('dashboard_stat_geo_value'), icon: MapPin, desc: t('dashboard_stat_geo_desc') },
     { name: t('dashboard_stat_links_label'), value: t('dashboard_stat_links_value'), icon: Network, desc: t('dashboard_stat_links_desc') },
   ];
+
+  const patternsQ = useQuery({ queryKey: ['patterns'], queryFn: () => patternsApi.list() });
+  const patternsUsingFallback = patternsQ.isError;
+  const topPatterns = (patternsUsingFallback ? mockPatterns : patternsQ.data ?? [])
+    .slice()
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 5);
 
   const recentActivities = [
     { id: '1', msg: 'Correlated new phone number +998901234567 to Alisher Karimov', time: '12m ago', type: 'correlation' },
@@ -141,6 +154,46 @@ export default function AnalystDashboard() {
                 </div>
               ))}
             </div>
+          </div>
+        </div>
+
+        {/* AI Patterns */}
+        <div className="bg-[#0e1220]/40 border border-gray-800/60 p-6 rounded-2xl space-y-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-bold font-mono text-white tracking-wide uppercase flex items-center gap-2">
+                <Sparkles size={14} className="text-cyan-400" /> {t('patterns_dashboard_card_title')}
+              </h3>
+              <p className="text-xxs text-gray-500 font-mono mt-0.5">{t('patterns_subtitle')}</p>
+            </div>
+            <Link href="/patterns" className="flex items-center gap-1 text-xxs font-mono text-cyan-400 hover:underline shrink-0">
+              {t('patterns_view_all')} <ArrowRight size={11} />
+            </Link>
+          </div>
+
+          <div className="space-y-2">
+            {topPatterns.map((p) => {
+              const Icon = PATTERN_TYPE_ICON[p.type] || PATTERN_FALLBACK_ICON;
+              return (
+                <Link
+                  key={p.id}
+                  href="/patterns"
+                  className="flex items-center gap-3 p-3 bg-[#0a0c14] border border-gray-800/50 hover:border-cyan-500/30 rounded-xl transition-all"
+                >
+                  <div className="w-8 h-8 rounded-lg bg-cyan-600/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400 shrink-0">
+                    <Icon size={14} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <span className="text-[9px] font-bold font-mono uppercase tracking-widest text-cyan-400">{t(PATTERN_TYPE_KEY[p.type] ?? 'patterns_type_hub_entity')}</span>
+                    <h5 className="text-xs font-bold font-mono text-gray-200 truncate">{p.title}</h5>
+                  </div>
+                  <span className={`text-lg font-bold font-mono shrink-0 ${scoreColorClass(p.score)}`}>{p.score}</span>
+                </Link>
+              );
+            })}
+            {topPatterns.length === 0 && (
+              <p className="text-xxs text-gray-600 font-mono text-center py-4">{t('patterns_no_patterns')}</p>
+            )}
           </div>
         </div>
 

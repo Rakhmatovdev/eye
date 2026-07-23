@@ -1,0 +1,83 @@
+import type { Alert } from '../lib/api';
+
+// Demo fallback for the Alert Inbox when the API is unreachable. Mirrors the
+// shape/spirit of backend/internal/seed/seed.go's alert rules (watchlist
+// hits, high-risk entities, hostile threat classifications).
+const ago = (h: number) => new Date(Date.now() - h * 3600_000).toISOString();
+
+export const mockAlerts: Alert[] = [
+  {
+    id: 'alert-mock-001',
+    rule_id: 'rule-seed-threat',
+    rule_name: 'Hostile Threat Classification',
+    severity: 'critical',
+    title: 'Threat classification match',
+    message: 'Track HOSTILE-01 (convoy) is classified "hostile", matching this rule\'s watched classes.',
+    entity_id: 'ent-009',
+    threat_id: 't-001',
+    acknowledged: false,
+    created_at: ago(1),
+  },
+  {
+    id: 'alert-mock-002',
+    rule_id: 'rule-seed-watchlist',
+    rule_name: 'Watchlist Sensor Hit',
+    severity: 'high',
+    title: 'Watchlisted entity detected',
+    message: 'Timur Umarov, who is on the watchlist, was picked up by a sensor.',
+    entity_id: 'ent-009',
+    detection_id: 'det-007',
+    acknowledged: false,
+    created_at: ago(3),
+  },
+  {
+    id: 'alert-mock-003',
+    rule_id: 'rule-seed-watchlist',
+    rule_name: 'Watchlist Sensor Hit',
+    severity: 'high',
+    title: 'Watchlisted entity detected',
+    message: 'Hassan Al-Rashidi, who is on the watchlist, was picked up by a sensor.',
+    entity_id: 'ent-011',
+    detection_id: 'det-002',
+    acknowledged: false,
+    created_at: ago(5),
+  },
+  {
+    id: 'alert-mock-004',
+    rule_id: 'rule-seed-risk',
+    rule_name: 'High Risk Entity (>=80)',
+    severity: 'medium',
+    title: 'High risk entity',
+    message: 'Zhang Wei has a risk score of 91, at or above the rule threshold of 80.',
+    entity_id: 'ent-002',
+    acknowledged: false,
+    created_at: ago(10),
+  },
+  {
+    id: 'alert-mock-005',
+    rule_id: 'rule-seed-risk',
+    rule_name: 'High Risk Entity (>=80)',
+    severity: 'medium',
+    title: 'High risk entity',
+    message: 'Dragon Capital Investment has a risk score of 89, at or above the rule threshold of 80.',
+    entity_id: 'ent-014',
+    acknowledged: true,
+    ack_by: 'admin@platform.io',
+    ack_at: ago(2),
+    created_at: ago(20),
+  },
+  {
+    id: 'alert-mock-006',
+    rule_id: 'rule-seed-watchlist',
+    rule_name: 'Watchlist Sensor Hit',
+    severity: 'high',
+    title: 'Watchlisted entity detected',
+    message: 'Timur Umarov, who is on the watchlist, was picked up by a sensor.',
+    entity_id: 'ent-009',
+    detection_id: 'det-016',
+    acknowledged: true,
+    ack_by: 'analyst@platform.io',
+    ack_at: ago(4),
+    created_at: ago(26),
+  },
+];

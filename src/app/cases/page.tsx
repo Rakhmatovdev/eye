@@ -4,11 +4,12 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import WorkspaceLayout from '../../components/layout/WorkspaceLayout';
 import ConfirmDialog from '../../components/common/ConfirmDialog';
-import { casesApi } from '../../lib/api';
+import ReportModal from '../../components/common/ReportModal';
+import { casesApi, reportsApi } from '../../lib/api';
 import { apiErrorMessage } from '../../lib/apiClient';
 import { useT, type TKey } from '../../lib/i18n';
 import { mockCases, type Case } from '../../data/mockCases';
-import { FolderLock, Share2, User, Boxes, AlertCircle, Trash2 } from 'lucide-react';
+import { FolderLock, Share2, User, Boxes, AlertCircle, Trash2, FileText } from 'lucide-react';
 
 const PRIORITY_STYLE: Record<string, string> = {
   critical: 'text-red-400 border-red-500/40 bg-red-500/10',
@@ -39,6 +40,13 @@ export default function CasesPage() {
 
   const [error, setError] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<Case | null>(null);
+  const [reportTarget, setReportTarget] = useState<Case | null>(null);
+
+  const reportM = useMutation({ mutationFn: (caseId: string) => reportsApi.case(caseId) });
+  const handleOpenReport = (c: Case) => {
+    setReportTarget(c);
+    reportM.mutate(c.id);
+  };
 
   const statusM = useMutation({
     mutationFn: ({ id, status }: { id: string; status: string }) => casesApi.update(id, { status }),
@@ -118,6 +126,12 @@ export default function CasesPage() {
                     <Share2 size={11} /> {t('cases_open_graph_link')}
                   </Link>
                   <button
+                    onClick={() => handleOpenReport(c)}
+                    className="flex items-center gap-1 text-gray-400 hover:text-gray-200 hover:underline"
+                  >
+                    <FileText size={11} /> {t('report_btn')}
+                  </button>
+                  <button
                     onClick={() => setDeleteTarget(c)}
                     className="flex items-center gap-1 text-red-400 hover:underline"
                   >
@@ -144,6 +158,18 @@ export default function CasesPage() {
           isPending={deleteM.isPending}
           onCancel={() => setDeleteTarget(null)}
           onConfirm={() => deleteM.mutate(deleteTarget.id)}
+        />
+      )}
+
+      {reportTarget && (
+        <ReportModal
+          title={`${t('report_title')} — ${reportTarget.title}`}
+          filename={`${reportTarget.id}-report.md`}
+          markdown={reportM.data?.markdown ?? null}
+          generatedAt={reportM.data?.generated_at}
+          isLoading={reportM.isPending}
+          isError={reportM.isError}
+          onClose={() => setReportTarget(null)}
         />
       )}
     </WorkspaceLayout>

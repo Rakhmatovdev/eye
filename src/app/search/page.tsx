@@ -1,18 +1,41 @@
 'use client';
 import React, { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import axios from 'axios';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import toast from 'react-hot-toast';
 import WorkspaceLayout from '../../components/layout/WorkspaceLayout';
 import { mockEntities, type Entity } from '../../data/mockEntities';
-import { entitiesApi } from '../../lib/api';
+import { entitiesApi, watchlistApi } from '../../lib/api';
+import { apiErrorMessage } from '../../lib/apiClient';
 import { useT } from '../../lib/i18n';
-import { Search as SearchIcon, Filter, Eye, AlertCircle } from 'lucide-react';
+import { Search as SearchIcon, Filter, Eye, AlertCircle, Bookmark, BookmarkCheck } from 'lucide-react';
 import Link from 'next/link';
 
 export default function SearchPage() {
   const t = useT();
+  const queryClient = useQueryClient();
   const [query, setQuery] = useState('');
   const [selectedType, setSelectedType] = useState('all');
   const [selectedClassification, setSelectedClassification] = useState('all');
+
+  const watchlistQ = useQuery({ queryKey: ['watchlist'], queryFn: () => watchlistApi.list(), retry: false });
+  const watchedIds = new Set((watchlistQ.data ?? []).map((w) => w.entity_id));
+
+  const addWatchlistM = useMutation({
+    mutationFn: (entityId: string) => watchlistApi.add(entityId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['watchlist'] });
+      toast.success(t('watchlist_add_btn'));
+    },
+    onError: (err) => {
+      queryClient.invalidateQueries({ queryKey: ['watchlist'] });
+      if (axios.isAxiosError(err) && err.response?.status === 409) {
+        toast(t('watchlist_already'));
+        return;
+      }
+      toast.error(apiErrorMessage(err, t('watchlist_add_error')));
+    },
+  });
 
   // Live entities from the backend. `type`/`search` are server-side filters;
   // classification is filtered client-side (no server param for it in MVP).
@@ -142,7 +165,15 @@ export default function SearchPage() {
               {/* Footer actions */}
               <div className="flex justify-between items-center pt-2 border-t border-gray-800/40 text-xxs font-mono">
                 <span className="text-gray-600 truncate max-w-[150px]">{ent.source}</span>
-                <div className="flex gap-2">
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => !watchedIds.has(ent.id) && addWatchlistM.mutate(ent.id)}
+                    disabled={watchedIds.has(ent.id) || addWatchlistM.isPending}
+                    title={watchedIds.has(ent.id) ? t('watchlist_on_watchlist') : t('watchlist_add_btn')}
+                    className={`p-1 rounded transition-all ${watchedIds.has(ent.id) ? 'text-amber-400' : 'text-gray-500 hover:text-amber-400'}`}
+                  >
+                    {watchedIds.has(ent.id) ? <BookmarkCheck size={13} /> : <Bookmark size={13} />}
+                  </button>
                   <Link
                     href={`/entity/${ent.id}`}
                     className="flex items-center gap-1 text-cyan-400 hover:underline"

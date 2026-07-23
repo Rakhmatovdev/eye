@@ -12,6 +12,9 @@ const ROUTES = [
   '/entity/ent-001',
   '/surveillance',
   '/command',
+  '/alerts',
+  '/watchlist',
+  '/patterns',
 ];
 
 async function warm(base: string, path: string) {

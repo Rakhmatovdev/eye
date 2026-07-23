@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
-import type { Detection } from './api';
+import type { Detection, Alert, AlertSeverity } from './api';
 import { useAuthStore } from '../store/authStore';
 
 export type LiveConnStatus = 'connecting' | 'live' | 'offline';
@@ -68,6 +68,30 @@ function toDetection(frame: { type: string; data: any }): Detection | null {
   return null;
 }
 
+// New backend frame kind: `{type: "alert", data: <Alert>}`. Field names
+// already match the FE `Alert` shape 1:1 (see lib/api.ts), so this just
+// tolerates missing fields rather than remapping anything.
+function toAlert(frame: { type: string; data: any }): Alert | null {
+  if (frame.type !== 'alert' || !frame.data) return null;
+  const a = frame.data;
+  liveCounter += 1;
+  return {
+    id: a.id ?? `live-alert-${Date.now()}-${liveCounter}`,
+    rule_id: a.rule_id ?? '',
+    rule_name: a.rule_name ?? '',
+    severity: (a.severity as AlertSeverity) ?? 'low',
+    title: a.title ?? 'Alert',
+    message: a.message ?? '',
+    entity_id: a.entity_id || undefined,
+    threat_id: a.threat_id || undefined,
+    detection_id: a.detection_id || undefined,
+    acknowledged: !!a.acknowledged,
+    ack_by: a.ack_by || undefined,
+    ack_at: a.ack_at || undefined,
+    created_at: a.created_at ?? new Date().toISOString(),
+  };
+}
+
 /**
  * Connects to the backend's authenticated live WebSocket (`/ws?token=...`)
  * and exposes a rolling list of `detection`/`threat` frames plus the
@@ -77,9 +101,14 @@ function toDetection(frame: { type: string; data: any }): Detection | null {
  * every successful open. Guarded for React 18 StrictMode double-invoke and
  * SSR: the socket (and any pending reconnect timer) is opened/cleared inside
  * the effect's cleanup, and the connect path only runs client-side.
+ *
+ * Also exposes a rolling list of `alert` frames (new backend addition) as
+ * `alerts`, independent of `items` — existing detection/threat consumers
+ * that only destructure `{ items, status }` are unaffected.
  */
 export function useLiveFeed(maxItems = 20) {
   const [items, setItems] = useState<Detection[]>([]);
+  const [alerts, setAlerts] = useState<Alert[]>([]);
   const [status, setStatus] = useState<LiveConnStatus>('connecting');
   const wsRef = useRef<WebSocket | null>(null);
 
@@ -122,6 +151,10 @@ export function useLiveFeed(maxItems = 20) {
             if (detection) {
               setItems((prev) => [detection, ...prev].slice(0, maxItems));
             }
+            const alert = toAlert(frame);
+            if (alert) {
+              setAlerts((prev) => [alert, ...prev].slice(0, maxItems));
+            }
           } catch {
             // ignore malformed frames
           }
@@ -156,5 +189,5 @@ export function useLiveFeed(maxItems = 20) {
     };
   }, [maxItems]);
 
-  return { items, status };
+  return { items, status, alerts };
 }

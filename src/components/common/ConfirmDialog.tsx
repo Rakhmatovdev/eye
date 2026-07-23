@@ -31,6 +31,7 @@ export default function ConfirmDialog({
         <p className="text-xs text-gray-400 font-mono leading-relaxed">{message}</p>
         <div className="flex items-center gap-2">
           <button
+            data-testid="confirm-dialog-confirm-btn"
             onClick={onConfirm}
             disabled={isPending}
             className="px-4 py-2 bg-red-600/80 hover:bg-red-600 text-white rounded-xl text-xs font-bold font-mono disabled:opacity-40 transition-all"

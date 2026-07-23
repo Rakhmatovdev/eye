@@ -1,11 +1,13 @@
 'use client';
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { 
-  LayoutDashboard, 
-  Search, 
-  Share2, 
+import { useQuery } from '@tanstack/react-query';
+import toast from 'react-hot-toast';
+import {
+  LayoutDashboard,
+  Search,
+  Share2,
   Map,
   Clock,
   FolderLock,
@@ -14,12 +16,17 @@ import {
   Cctv,
   Crosshair,
   Bot,
-  Settings
+  Settings,
+  Bell,
+  Eye,
+  Sparkles,
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import { useLocaleStore, type Locale } from '../../store/localeStore';
 import { useT } from '../../lib/i18n';
 import { useHasMounted } from '../../lib/useHasMounted';
+import { useLiveFeed } from '../../lib/useLiveFeed';
+import { alertsApi } from '../../lib/api';
 
 interface WorkspaceLayoutProps {
   children: React.ReactNode;
@@ -48,6 +55,59 @@ function LocaleSwitcher() {
   );
 }
 
+// Bell with an unacknowledged-alert badge. Unread count = the server's
+// current unacknowledged total (fetched once on mount) plus any `alert` WS
+// frames received live since — kept as two separate numbers (rather than one
+// state overwritten by both sources) so a live arrival can't race a slightly
+// stale initial fetch and get clobbered. A brief toast flashes per new live
+// alert, reusing the app's existing react-hot-toast (already mounted in
+// providers.tsx) rather than adding a new dependency.
+function AlertBell() {
+  const router = useRouter();
+  const t = useT();
+  const { alerts: liveAlerts } = useLiveFeed();
+  const [baseUnread, setBaseUnread] = useState<number | null>(null);
+  const [liveIncrement, setLiveIncrement] = useState(0);
+  const lastSeenIdRef = useRef<string | undefined>(undefined);
+
+  const countQ = useQuery({
+    queryKey: ['alerts-unread-count'],
+    queryFn: () => alertsApi.list({ acknowledged: false, limit: 1 }),
+    staleTime: 15_000,
+    retry: false,
+  });
+
+  useEffect(() => {
+    if (countQ.data) setBaseUnread(countQ.data.total);
+  }, [countQ.data]);
+
+  useEffect(() => {
+    if (liveAlerts.length === 0) return;
+    const top = liveAlerts[0];
+    if (top.id === lastSeenIdRef.current) return;
+    lastSeenIdRef.current = top.id;
+    setLiveIncrement((n) => n + 1);
+    toast(`${t('alerts_new_toast')} ${top.title}`, { icon: '🔔' });
+  }, [liveAlerts, t]);
+
+  const unreadCount = (baseUnread ?? 0) + liveIncrement;
+
+  return (
+    <button
+      onClick={() => router.push('/alerts')}
+      title={t('alerts_bell_title')}
+      className="relative w-9 h-9 rounded-xl bg-gray-900/60 border border-gray-800/60 hover:border-cyan-500/40 flex items-center justify-center text-gray-400 hover:text-cyan-400 transition-all"
+    >
+      <Bell size={16} />
+      {unreadCount > 0 && (
+        <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 px-1 rounded-full bg-red-600 text-white text-[9px] font-bold font-mono flex items-center justify-center leading-none">
+          {unreadCount > 99 ? '99+' : unreadCount}
+        </span>
+      )}
+    </button>
+  );
+}
+
 export default function WorkspaceLayout({ children }: WorkspaceLayoutProps) {
   const pathname = usePathname();
   const router = useRouter();
@@ -66,11 +126,14 @@ export default function WorkspaceLayout({ children }: WorkspaceLayoutProps) {
   const navItems = [
     { name: t('nav_home'), path: '/dashboard', icon: LayoutDashboard },
     { name: t('nav_search'), path: '/search', icon: Search },
+    { name: t('nav_alerts'), path: '/alerts', icon: ShieldAlert },
+    { name: t('nav_watchlist'), path: '/watchlist', icon: Eye },
     { name: t('nav_graph'), path: '/graph/case-01', icon: Share2 },
     { name: t('nav_map'), path: '/map', icon: Map },
     { name: t('nav_surveillance'), path: '/surveillance', icon: Cctv },
     { name: t('nav_command'), path: '/command', icon: Crosshair },
     { name: t('nav_assistant'), path: '/assistant', icon: Bot },
+    { name: t('nav_patterns'), path: '/patterns', icon: Sparkles },
     { name: t('nav_timeline'), path: '/timeline', icon: Clock },
     { name: t('nav_cases'), path: '/cases', icon: FolderLock },
     { name: t('nav_settings'), path: '/settings', icon: Settings },
@@ -142,7 +205,10 @@ export default function WorkspaceLayout({ children }: WorkspaceLayoutProps) {
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0 h-full relative">
-        <main className="flex-1 overflow-hidden relative">
+        <div className="h-12 shrink-0 border-b border-gray-800/60 bg-[#0a0c14] flex items-center justify-end px-4">
+          <AlertBell />
+        </div>
+        <main className="flex-1 overflow-hidden relative min-h-0">
           {children}
         </main>
       </div>

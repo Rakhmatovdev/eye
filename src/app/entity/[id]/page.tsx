@@ -1,10 +1,12 @@
 'use client';
 import React, { useState } from 'react';
+import axios from 'axios';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import WorkspaceLayout from '../../../components/layout/WorkspaceLayout';
-import { entitiesApi, sensorsApi, timelineApi } from '../../../lib/api';
+import ReportModal from '../../../components/common/ReportModal';
+import { entitiesApi, sensorsApi, timelineApi, watchlistApi, reportsApi } from '../../../lib/api';
 import { apiErrorMessage } from '../../../lib/apiClient';
 import { useT, type TKey } from '../../../lib/i18n';
 import ConfirmDialog from '../../../components/common/ConfirmDialog';
@@ -13,7 +15,7 @@ import { mockEvents } from '../../../data/mockEvents';
 import { mockDetections } from '../../../data/mockSensors';
 import {
   ArrowLeft, ShieldAlert, MapPin, ScanFace, Clock, Share2, Cctv, AlertCircle, Gauge,
-  Pencil, Trash2, Plus, X,
+  Pencil, Trash2, Plus, X, Bookmark, BookmarkCheck, FileText,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -44,12 +46,36 @@ export default function EntityDossierPage() {
 
   const [showEdit, setShowEdit] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showReport, setShowReport] = useState(false);
   const [actionError, setActionError] = useState('');
 
   const entityQ = useQuery({ queryKey: ['entity', id], queryFn: () => entitiesApi.get(id) });
   const sightQ = useQuery({ queryKey: ['sightings', id], queryFn: () => sensorsApi.detections({ entityId: id }) });
   const evQ = useQuery({ queryKey: ['entity-events', id], queryFn: () => timelineApi.list({ entityId: id }) });
   const connQ = useQuery({ queryKey: ['entity-conn', id], queryFn: () => entitiesApi.expand(id) });
+  const watchlistQ = useQuery({ queryKey: ['watchlist'], queryFn: () => watchlistApi.list(), retry: false });
+  const isWatchlisted = !!watchlistQ.data?.some((w) => w.entity_id === id);
+
+  const addWatchlistM = useMutation({
+    mutationFn: () => watchlistApi.add(id),
+    onSuccess: () => {
+      setActionError('');
+      queryClient.invalidateQueries({ queryKey: ['watchlist'] });
+    },
+    onError: (err) => {
+      // A 409 just means it's already watchlisted — refresh so the button
+      // flips to the "on watchlist" state instead of surfacing an error.
+      queryClient.invalidateQueries({ queryKey: ['watchlist'] });
+      if (axios.isAxiosError(err) && err.response?.status === 409) return;
+      setActionError(apiErrorMessage(err, t('watchlist_add_error')));
+    },
+  });
+
+  const reportM = useMutation({ mutationFn: () => reportsApi.entity(id) });
+  const handleOpenReport = () => {
+    setShowReport(true);
+    reportM.mutate();
+  };
 
   // Fallbacks so the dossier still renders if the API is unreachable.
   const entity = entityQ.data ?? mockEntities.find((e) => e.id === id);
@@ -127,6 +153,27 @@ export default function EntityDossierPage() {
           </div>
           <div className="flex flex-col items-end gap-3">
             <div className="flex items-center gap-2">
+              <button
+                data-testid="entity-watchlist-btn"
+                data-watchlisted={isWatchlisted}
+                onClick={() => !isWatchlisted && addWatchlistM.mutate()}
+                disabled={isWatchlisted || addWatchlistM.isPending}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xxs font-bold font-mono transition-all border ${
+                  isWatchlisted
+                    ? 'bg-amber-500/10 border-amber-500/30 text-amber-400 cursor-default'
+                    : 'bg-gray-800/60 hover:bg-gray-700/60 border-gray-700/60 text-gray-300 disabled:opacity-40'
+                }`}
+              >
+                {isWatchlisted ? <BookmarkCheck size={11} /> : <Bookmark size={11} />}
+                {isWatchlisted ? t('watchlist_on_watchlist') : t('watchlist_add_btn')}
+              </button>
+              <button
+                data-testid="entity-report-btn"
+                onClick={handleOpenReport}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-800/60 hover:bg-gray-700/60 border border-gray-700/60 text-gray-300 rounded-xl text-xxs font-bold font-mono transition-all"
+              >
+                <FileText size={11} /> {t('report_btn')}
+              </button>
               <button
                 onClick={() => { setActionError(''); setShowEdit(true); }}
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-800/60 hover:bg-gray-700/60 border border-gray-700/60 text-gray-300 rounded-xl text-xxs font-bold font-mono transition-all"
@@ -259,6 +306,18 @@ export default function EntityDossierPage() {
           isPending={deleteM.isPending}
           onCancel={() => setShowDeleteConfirm(false)}
           onConfirm={() => deleteM.mutate()}
+        />
+      )}
+
+      {showReport && (
+        <ReportModal
+          title={`${t('report_title')} — ${entity.name}`}
+          filename={`${entity.id}-report.md`}
+          markdown={reportM.data?.markdown ?? null}
+          generatedAt={reportM.data?.generated_at}
+          isLoading={reportM.isPending}
+          isError={reportM.isError}
+          onClose={() => setShowReport(false)}
         />
       )}
     </WorkspaceLayout>

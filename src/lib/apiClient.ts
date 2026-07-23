@@ -28,7 +28,7 @@ apiClient.interceptors.request.use((config) => {
 export interface Envelope<T> {
   success: boolean;
   data: T;
-  meta?: { page?: number; total?: number };
+  meta?: { page?: number; total?: number; limit?: number };
   error?: { message: string; detail?: string };
 }
 

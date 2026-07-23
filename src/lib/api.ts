@@ -507,6 +507,173 @@ export const timelineApi = {
   },
 };
 
+/* -------------------------------- Alerts --------------------------------- */
+
+export type AlertSeverity = 'critical' | 'high' | 'medium' | 'low';
+
+export interface Alert {
+  id: string;
+  rule_id: string;
+  rule_name: string;
+  severity: AlertSeverity;
+  title: string;
+  message: string;
+  entity_id?: string;
+  threat_id?: string;
+  detection_id?: string;
+  acknowledged: boolean;
+  ack_by?: string;
+  ack_at?: string;
+  created_at: string;
+}
+
+export interface AlertsPage {
+  alerts: Alert[];
+  page: number;
+  limit: number;
+  total: number;
+}
+
+export const alertsApi = {
+  // Always paginated server-side (default page=1 limit=20), newest first.
+  async list(
+    params: { acknowledged?: boolean; severity?: string; page?: number; limit?: number } = {}
+  ): Promise<AlertsPage> {
+    const res = await apiClient.get<Envelope<Alert[] | null>>('/alerts', {
+      params: {
+        acknowledged: params.acknowledged,
+        severity: params.severity && params.severity !== 'all' ? params.severity : undefined,
+        page: params.page,
+        limit: params.limit,
+      },
+    });
+    const alerts = unwrap(res.data) || [];
+    return {
+      alerts,
+      page: res.data.meta?.page ?? params.page ?? 1,
+      limit: res.data.meta?.limit ?? params.limit ?? 20,
+      total: res.data.meta?.total ?? alerts.length,
+    };
+  },
+  // ack_by is set server-side from the caller's JWT email.
+  async ack(id: string): Promise<Alert> {
+    const res = await apiClient.patch<Envelope<Alert>>(`/alerts/${id}/ack`);
+    return unwrap(res.data);
+  },
+};
+
+/* ------------------------------- Watchlist -------------------------------- */
+
+export interface WatchlistEntry {
+  id: string;
+  entity_id: string;
+  entity_label: string;
+  note?: string;
+  created_by: string;
+  created_at: string;
+}
+
+export const watchlistApi = {
+  async list(): Promise<WatchlistEntry[]> {
+    const res = await apiClient.get<Envelope<WatchlistEntry[] | null>>('/watchlist');
+    return unwrap(res.data) || [];
+  },
+  // 409s if the entity is already watchlisted — callers should catch that and
+  // show an "already watchlisted" state rather than a generic error.
+  async add(entityId: string, note?: string): Promise<WatchlistEntry> {
+    const res = await apiClient.post<Envelope<WatchlistEntry>>('/watchlist', {
+      entity_id: entityId,
+      note: note || undefined,
+    });
+    return unwrap(res.data);
+  },
+  async remove(id: string): Promise<void> {
+    await apiClient.delete(`/watchlist/${id}`);
+  },
+};
+
+/* ---------------------------- Graph analysis ------------------------------ */
+
+export interface TopConnectedEntity {
+  entity_id: string;
+  label: string;
+  type: string;
+  degree: number;
+}
+
+export interface GraphStats {
+  top_connected: TopConnectedEntity[];
+  total_nodes: number;
+  total_edges: number;
+}
+
+export const graphApi = {
+  async shortestPath(from: string, to: string): Promise<{ nodes: Entity[]; edges: Relationship[]; length: number }> {
+    const res = await apiClient.get<Envelope<GraphData & { length: number }>>('/graph/shortest-path', {
+      params: { from, to },
+    });
+    const data = unwrap(res.data);
+    return {
+      nodes: (data.nodes || []).map(mapEntity),
+      edges: (data.edges || []).map(mapRelationship),
+      length: data.length,
+    };
+  },
+  async commonNeighbors(a: string, b: string): Promise<{ entities: Entity[]; count: number }> {
+    const res = await apiClient.get<Envelope<{ entities: BackendEntity[] | null; count: number }>>(
+      '/graph/common-neighbors',
+      { params: { a, b } }
+    );
+    const data = unwrap(res.data);
+    return { entities: (data.entities || []).map(mapEntity), count: data.count };
+  },
+  async stats(): Promise<GraphStats> {
+    const res = await apiClient.get<Envelope<GraphStats>>('/graph/stats');
+    return unwrap(res.data);
+  },
+};
+
+/* ------------------------------- Patterns --------------------------------- */
+
+export type PatternType = 'co_location' | 'hub_entity' | 'threat_correlation' | 'burst_activity';
+
+export interface Pattern {
+  id: string;
+  type: PatternType;
+  score: number;
+  title: string;
+  description: string;
+  entity_ids: string[];
+  evidence: string[];
+  detected_at: string;
+}
+
+export const patternsApi = {
+  async list(): Promise<Pattern[]> {
+    const res = await apiClient.get<Envelope<{ patterns: Pattern[] | null }>>('/analytics/patterns');
+    return unwrap(res.data).patterns || [];
+  },
+};
+
+/* -------------------------------- Reports ---------------------------------- */
+
+export interface Report {
+  markdown: string;
+  generated_at: string;
+  subject_id: string;
+}
+
+export const reportsApi = {
+  async entity(id: string): Promise<Report> {
+    const res = await apiClient.get<Envelope<Report>>(`/entities/${id}/report`);
+    return unwrap(res.data);
+  },
+  async case(id: string): Promise<Report> {
+    const res = await apiClient.get<Envelope<Report>>(`/cases/${id}/report`);
+    return unwrap(res.data);
+  },
+};
+
 // Build a graph from the whole entity set: entities are nodes, and each node's
 // neighbourhood is fetched via /graph/expand and merged (deduped). There is no
 // "list all relationships" endpoint, so this is the MVP way to assemble edges.
