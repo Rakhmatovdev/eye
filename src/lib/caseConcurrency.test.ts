@@ -1,0 +1,2 @@
+import {mapCase} from './api';
+test('retains the server timestamp for optimistic updates without inventing a token for legacy data',()=>{const record={id:'case',title:'Case',description:'',status:'open',priority:'medium',created_at:'2026-10-09T10:00:00Z'};expect(mapCase({...record,updated_at:'2026-10-09T10:10:00.123Z'}).updated_at).toBe('2026-10-09T10:10:00.123Z');expect(mapCase(record).updated_at).toBeUndefined();});

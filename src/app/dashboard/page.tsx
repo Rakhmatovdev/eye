@@ -1,203 +1,128 @@
 'use client';
-import React from 'react';
+import React, { useState } from 'react';
+import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
+import { ArrowRight, ArrowUpRight, FolderOpen, FolderGit2, ShieldAlert, Search, RefreshCw, Sparkles, Network, Map, Clock, Bot, CheckCheck } from 'lucide-react';
 import WorkspaceLayout from '../../components/layout/WorkspaceLayout';
+import DashboardPreferences, { useDashboardPreferences, PinnedProjects } from '../../components/workbench/DashboardPreferences';
+import { defaultPreferences } from '../../lib/workspaceApi';
 import { useAuthStore } from '../../store/authStore';
 import { useWorkspaceStore } from '../../store/workspaceStore';
+import { useLocaleStore } from '../../store/localeStore';
 import { useT } from '../../lib/i18n';
 import { useHasMounted } from '../../lib/useHasMounted';
-import { patternsApi } from '../../lib/api';
-import { mockPatterns } from '../../data/mockPatterns';
-import { PATTERN_TYPE_KEY, PATTERN_TYPE_ICON, PATTERN_FALLBACK_ICON, scoreColorClass } from '../../lib/patternUi';
-import {
-  FolderOpen,
-  MapPin,
-  Network,
-  Clock,
-  ShieldCheck,
-  Search,
-  MessageSquareCode,
-  Sparkles,
-  ArrowRight,
-} from 'lucide-react';
-import Link from 'next/link';
+import { alertsApi, casesApi, projectsApi, patternsApi } from '../../lib/api';
+import { scoreColorClass, PATTERN_TYPE_KEY, PATTERN_TYPE_ICON, PATTERN_FALLBACK_ICON } from '../../lib/patternUi';
 
 export default function AnalystDashboard() {
   const t = useT();
+  const locale = useLocaleStore(state => state.locale);
   const user = useAuthStore(state => state.user);
-  const activeCaseId = useWorkspaceStore(state => state.activeCaseId);
-  // `user` is seeded synchronously from localStorage on the client (see
-  // authStore.ts's loadInitial()), so the server always renders the "no
-  // user yet" defaults below while the client's very first (pre-hydration)
-  // render already has the real values — a text-content hydration mismatch.
-  // Gate on mount so both renders agree until a normal post-mount re-render.
-  const hasMounted = useHasMounted();
-  const displayUser = hasMounted ? user : null;
-
+  const mounted = useHasMounted();
+  const preferencesQuery = useDashboardPreferences();
+  const preferences = preferencesQuery.data ?? defaultPreferences;
+  const show = (widget: typeof preferences.widgets[number]) => preferences.widgets.includes(widget);
+  const [caseFilter, setCaseFilter] = useState<'all' | 'priority' | 'progress'>('all');
+  const setActiveCaseId = useWorkspaceStore(state => state.setActiveCaseId);
+  const cases = useQuery({ queryKey: ['cases'], queryFn: () => casesApi.list() });
+  const projects = useQuery({ queryKey: ['projects'], queryFn: () => projectsApi.list() });
+  const alerts = useQuery({ queryKey: ['dashboard-alerts'], queryFn: () => alertsApi.list({ acknowledged: false, limit: 5 }) });
+  const patterns = useQuery({ queryKey: ['patterns'], queryFn: () => patternsApi.list() });
+  const queries = [cases, projects, alerts, patterns];
+  const refreshing = queries.some(query => query.isFetching);
+  const failed = queries.some(query => query.isError);
+  const updatedAt = Math.min(...queries.map(query => query.dataUpdatedAt));
+  const activeCases = (cases.data ?? []).filter(item => item.status !== 'closed' && item.status !== 'archived');
+  const priority = { critical: 4, high: 3, medium: 2, low: 1 };
+  const filteredCases = activeCases.filter(item => caseFilter === 'all' || (caseFilter === 'priority'
+    ? item.priority === 'critical' || item.priority === 'high' : item.status === 'in-progress'));
+  const topCases = [...filteredCases].sort((a, b) => priority[b.priority] - priority[a.priority]).slice(0, 5);
+  const topPatterns = [...(patterns.data ?? [])].sort((a, b) => b.score - a.score).slice(0, 4);
+  const refresh = () => { queries.forEach(query => { void query.refetch(); }); };
   const stats = [
-    { name: t('dashboard_stat_cases_label'), value: t('dashboard_stat_cases_value'), icon: FolderOpen, desc: t('dashboard_stat_cases_desc') },
-    { name: t('dashboard_stat_geo_label'), value: t('dashboard_stat_geo_value'), icon: MapPin, desc: t('dashboard_stat_geo_desc') },
-    { name: t('dashboard_stat_links_label'), value: t('dashboard_stat_links_value'), icon: Network, desc: t('dashboard_stat_links_desc') },
+    { label: t('workspace_active_cases'), value: cases.isError ? '—' : cases.isPending ? '…' : activeCases.length, icon: FolderOpen, href: '/cases', note: t('workspace_open_cases'), tone: 'gold' },
+    { label: t('nav_projects'), value: projects.isError ? '—' : projects.isPending ? '…' : projects.data.length, icon: FolderGit2, href: '/projects', note: t('workspace_project_note'), tone: 'blue' },
+    { label: t('nav_alerts'), value: alerts.isError ? '—' : alerts.isPending ? '…' : alerts.data.total, icon: ShieldAlert, href: '/alerts', note: t('workspace_alert_note'), tone: 'rose' },
+    { label: t('nav_patterns'), value: patterns.isError ? '—' : patterns.isPending ? '…' : patterns.data.length, icon: Sparkles, href: '/patterns', note: t('workspace_patterns_note'), tone: 'violet' },
   ];
-
-  const patternsQ = useQuery({ queryKey: ['patterns'], queryFn: () => patternsApi.list() });
-  const patternsUsingFallback = patternsQ.isError;
-  const topPatterns = (patternsUsingFallback ? mockPatterns : patternsQ.data ?? [])
-    .slice()
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 5);
-
-  const recentActivities = [
-    { id: '1', msg: 'Correlated new phone number +998901234567 to Alisher Karimov', time: '12m ago', type: 'correlation' },
-    { id: '2', msg: 'Added "Tashkent Border Registry" source to Case #4', time: '1h ago', type: 'source' },
-    { id: '3', msg: 'Resolved path finding query between Silk Road Trading & Zhang Wei', time: '3h ago', type: 'query' },
+  const tools = [
+    { href: '/map', icon: Map, title: t('nav_map'), note: t('workspace_map_note') },
+    { href: '/timeline', icon: Clock, title: t('nav_timeline'), note: t('workspace_timeline_note') },
+    { href: '/assistant', icon: Bot, title: t('nav_assistant'), note: t('workspace_assistant_note') },
   ];
+  const state = (query: { isPending: boolean; isError: boolean; refetch: () => unknown }, empty: boolean, kind: 'cases' | 'alerts' | 'patterns') => {
+    if (query.isPending) return <div role="status" className="space-y-3 p-5"><span className="sr-only">{t('common_loading')}</span>{[1, 2, 3].map(i => <div key={i} className="h-14 rounded-lg bg-[var(--bg-elevated)] animate-pulse" />)}</div>;
+    if (query.isError) return <div role="alert" className="dashboard-empty"><ShieldAlert size={25} /><p>{t('common_load_error')}</p><button onClick={() => query.refetch()} className="dashboard-secondary-button"><RefreshCw size={14} />{t('common_retry')}</button></div>;
+    if (empty) {
+      const Icon = kind === 'alerts' ? CheckCheck : kind === 'patterns' ? Network : FolderOpen;
+      return <div className="dashboard-empty"><span className="dashboard-empty-icon"><Icon size={25} strokeWidth={1.5} /></span><div><h3>{t(`workspace_${kind}_empty`)}</h3><p>{t(`workspace_${kind}_empty_note`)}</p></div>{kind !== 'alerts' && <Link href={`/${kind}`} className="dashboard-text-link">{t(kind === 'cases' ? 'nav_cases' : 'nav_patterns')}<ArrowRight size={14} /></Link>}</div>;
+    }
+    return null;
+  };
 
-  return (
-    <WorkspaceLayout>
-      <div className="p-8 space-y-6 h-full overflow-y-auto max-w-6xl mx-auto">
-        
-        {/* Welcome Header */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-6 bg-gradient-to-br from-[#0e1220] to-[#0c0e18] border border-gray-800/80 rounded-2xl relative overflow-hidden">
-          <div className="absolute right-0 top-0 w-80 h-80 bg-cyan-500/5 rounded-full blur-3xl" />
-          <div className="space-y-1">
-            <h1 className="text-xl font-bold font-mono tracking-wide text-white">
-              {t('dashboard_welcome')} {displayUser?.name.split(' ')[0] || 'John'}
-            </h1>
-            <p className="text-gray-400 text-xs font-mono">
-              {t('dashboard_sandbox_status')} {displayUser?.clearance || 'SECRET'}
-            </p>
-          </div>
-          <Link
-            href="/search"
-            className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl text-xs font-bold font-mono flex items-center gap-2 shadow-lg shadow-cyan-500/10"
-          >
-            <Search size={14} />
-            <span>{t('dashboard_search_registry')}</span>
-          </Link>
-        </div>
-
-        {/* Stats Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {stats.map((stat, idx) => {
-            const Icon = stat.icon;
-            return (
-              <div key={idx} className="bg-[#0e1220]/60 border border-gray-800/60 p-5 rounded-2xl space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xxs font-bold text-gray-500 uppercase tracking-widest font-mono">{stat.name}</span>
-                  <div className="w-8 h-8 rounded-lg bg-cyan-500/5 text-cyan-400 flex items-center justify-center border border-cyan-500/10">
-                    <Icon size={16} />
-                  </div>
-                </div>
-                <h3 className="text-xl font-bold font-mono text-white">{stat.value}</h3>
-                <p className="text-[10px] text-gray-500 font-mono">{stat.desc}</p>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Main Grid: Activity & Cases */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Active Case Files */}
-          <div className="bg-[#0e1220]/40 border border-gray-800/60 p-6 rounded-2xl space-y-4">
-            <div>
-              <h3 className="text-sm font-bold font-mono text-white tracking-wide uppercase">{t('dashboard_active_cases_title')}</h3>
-              <p className="text-xxs text-gray-500 font-mono mt-0.5">{t('dashboard_active_cases_subtitle')}</p>
+  return <WorkspaceLayout>
+    <div className="dashboard-page h-full overflow-y-auto">
+      <div className="dashboard-container">
+        <div className="dashboard-heading">
+          <div><p className="dashboard-eyebrow">{t('workspace_briefing')}</p><h1>{t('workspace_overview')}</h1><p className="dashboard-welcome">{t('workspace_greeting')}{mounted && user?.name ? `, ${user.name.split(' ')[0]}` : ''}<span className="dashboard-welcome-divider">/</span>{t('workspace_ready')}</p></div>
+          <div className="dashboard-heading-actions">
+            <DashboardPreferences preferences={preferences} projects={projects.data ?? []} disabled={preferencesQuery.isPending || preferencesQuery.isError || projects.isPending || projects.isError} />
+            <div className={`dashboard-sync ${failed ? 'has-error' : ''}`} aria-live="polite">
+              <span className="dashboard-sync-dot" />
+              {failed ? t('workspace_partial') : refreshing ? t('workspace_updating') : mounted && updatedAt > 0 ? <>{t('workspace_updated')} <time dateTime={new Date(updatedAt).toISOString()}>{new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit' }).format(updatedAt)}</time></> : t('common_loading')}
             </div>
-            
-            <div className="space-y-3">
-              {[
-                { code: 'CASE-01', title: 'Silk Road Customs Discrepancy', priority: 'High', status: 'In Progress' },
-                { code: 'CASE-02', title: 'Almaty Telecom Cell towers', priority: 'Medium', status: 'Reviewing' },
-                { code: 'CASE-03', title: 'Tashkent Shell Companies Registry', priority: 'Critical', status: 'Urgent' },
-              ].map(c => (
-                <Link
-                  key={c.code}
-                  href={`/graph/${c.code}`}
-                  className="flex items-center justify-between p-4 bg-[#0a0c14] border border-gray-800/50 hover:border-cyan-500/30 rounded-xl transition-all block group"
-                >
-                  <div className="space-y-1">
-                    <span className="text-xxs font-bold font-mono text-cyan-400 group-hover:underline">{c.code}</span>
-                    <h5 className="text-xs font-bold font-mono text-gray-200 leading-snug">{c.title}</h5>
-                  </div>
-                  <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase ${
-                    c.priority === 'Critical' ? 'bg-red-500/10 text-red-400 border border-red-500/20' :
-                    c.priority === 'High' ? 'bg-orange-500/10 text-orange-400 border border-orange-500/20' :
-                    'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20'
-                  }`}>
-                    {c.priority === 'Critical' ? t('dashboard_priority_critical') :
-                      c.priority === 'High' ? t('dashboard_priority_high') :
-                      t('dashboard_priority_medium')}
-                  </span>
-                </Link>
-              ))}
-            </div>
-          </div>
-
-          {/* Activity Logs */}
-          <div className="bg-[#0e1220]/40 border border-gray-800/60 p-6 rounded-2xl space-y-4">
-            <div>
-              <h3 className="text-sm font-bold font-mono text-white tracking-wide uppercase">{t('dashboard_activity_title')}</h3>
-              <p className="text-xxs text-gray-500 font-mono mt-0.5">{t('dashboard_activity_subtitle')}</p>
-            </div>
-
-            <div className="space-y-4">
-              {recentActivities.map(act => (
-                <div key={act.id} className="flex gap-3 text-xs">
-                  <div className="w-6 h-6 rounded-lg bg-gray-900 border border-gray-800 flex items-center justify-center shrink-0">
-                    <MessageSquareCode size={12} className="text-gray-400" />
-                  </div>
-                  <div className="space-y-1">
-                    <p className="font-mono text-gray-300 leading-normal">{act.msg}</p>
-                    <span className="text-[10px] text-gray-600 font-mono">{act.time}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
+            <button onClick={refresh} disabled={refreshing} className="dashboard-secondary-button"><RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />{t('workspace_refresh')}</button>
           </div>
         </div>
 
-        {/* AI Patterns */}
-        <div className="bg-[#0e1220]/40 border border-gray-800/60 p-6 rounded-2xl space-y-4">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <h3 className="text-sm font-bold font-mono text-white tracking-wide uppercase flex items-center gap-2">
-                <Sparkles size={14} className="text-cyan-400" /> {t('patterns_dashboard_card_title')}
-              </h3>
-              <p className="text-xxs text-gray-500 font-mono mt-0.5">{t('patterns_subtitle')}</p>
-            </div>
-            <Link href="/patterns" className="flex items-center gap-1 text-xxs font-mono text-cyan-400 hover:underline shrink-0">
-              {t('patterns_view_all')} <ArrowRight size={11} />
-            </Link>
-          </div>
+        {preferencesQuery.isError && <p role="alert" className="wb-muted">{t('wb_preferences_error')} <button className="dashboard-text-link" onClick={() => preferencesQuery.refetch()}>{t('common_retry')}</button></p>}
+        <PinnedProjects preferences={preferences} projects={projects.data ?? []} />
+        {show('stats') && <div className="dashboard-stats">{stats.map(stat => <Link key={stat.href} href={stat.href} className={`dashboard-stat tone-${stat.tone}`}>
+          <div className="dashboard-stat-top"><span className="dashboard-stat-icon"><stat.icon size={18} strokeWidth={1.7} /></span><ArrowUpRight size={16} className="dashboard-stat-arrow" /></div>
+          <p className="dashboard-stat-label">{stat.label}</p><p className="dashboard-stat-value">{stat.value}</p><p className="dashboard-stat-note">{stat.note}</p>
+        </Link>)}</div>}
 
-          <div className="space-y-2">
-            {topPatterns.map((p) => {
-              const Icon = PATTERN_TYPE_ICON[p.type] || PATTERN_FALLBACK_ICON;
-              return (
-                <Link
-                  key={p.id}
-                  href="/patterns"
-                  className="flex items-center gap-3 p-3 bg-[#0a0c14] border border-gray-800/50 hover:border-cyan-500/30 rounded-xl transition-all"
-                >
-                  <div className="w-8 h-8 rounded-lg bg-cyan-600/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400 shrink-0">
-                    <Icon size={14} />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <span className="text-[9px] font-bold font-mono uppercase tracking-widest text-cyan-400">{t(PATTERN_TYPE_KEY[p.type] ?? 'patterns_type_hub_entity')}</span>
-                    <h5 className="text-xs font-bold font-mono text-gray-200 truncate">{p.title}</h5>
-                  </div>
-                  <span className={`text-lg font-bold font-mono shrink-0 ${scoreColorClass(p.score)}`}>{p.score}</span>
-                </Link>
-              );
-            })}
-            {topPatterns.length === 0 && (
-              <p className="text-xxs text-gray-600 font-mono text-center py-4">{t('patterns_no_patterns')}</p>
-            )}
-          </div>
+        <section className="dashboard-search-banner">
+          <span className="dashboard-search-symbol" aria-hidden="true"><Network size={26} strokeWidth={1.4} /></span>
+          <div><h2>{t('workspace_search_title')}</h2><p>{t('workspace_search_note')}</p></div>
+          <Link href="/search" className="dashboard-primary-button"><Search size={16} />{t('dashboard_search_registry')}<ArrowRight size={15} /></Link>
+        </section>
+
+        <div className={`dashboard-main-grid ${!show('cases') || !show('alerts') ? 'wb-single-column' : ''}`}>
+          {show('cases') && <section className="dashboard-panel">
+            <div className="dashboard-panel-heading"><div><h2><FolderOpen size={17} />{t('workspace_active_cases')}{!cases.isPending && !cases.isError && <span className="dashboard-count">{activeCases.length}</span>}</h2><p>{t('workspace_priority_note')}</p></div><Link href="/cases" className="dashboard-text-link">{t('workspace_view_all')}<ArrowUpRight size={14} /></Link></div>
+            <div className="dashboard-case-filters" role="group" aria-label={t('workspace_case_filters')}>
+              {(['all', 'priority', 'progress'] as const).map(filter => <button key={filter} type="button" aria-pressed={caseFilter === filter} onClick={() => setCaseFilter(filter)}>{t(`workspace_filter_${filter}`)}</button>)}
+            </div>
+            {state(cases, !activeCases.length, 'cases') || (!topCases.length ? <div className="dashboard-empty"><FolderOpen size={25} /><h3>{t('workspace_filter_empty')}</h3><button className="dashboard-secondary-button" onClick={() => setCaseFilter('all')}>{t('workspace_show_all')}</button></div> : <div>
+              <div className="dashboard-case-columns"><span>{t('workspace_case_column')}</span><span>{t('workspace_priority_column')}</span></div>
+              {topCases.map(item => <Link key={item.id} href={`/graph/${encodeURIComponent(item.id)}`} onClick={() => setActiveCaseId(item.id)} className="dashboard-case-row">
+                <span className="dashboard-row-icon"><FolderOpen size={17} strokeWidth={1.6} /></span>
+                <div className="min-w-0 flex-1"><h3>{item.title}</h3><p>{item.assignee && item.assignee !== 'unassigned' ? item.assignee : t('workspace_unassigned')}<span>·</span>{t(item.status === 'in-progress' ? 'cases_status_in_progress' : 'cases_status_open')}</p></div>
+                <span className={`dashboard-priority priority-${item.priority}`}><span />{t(`workspace_priority_${item.priority}`)}</span><ArrowUpRight size={15} className="dashboard-row-arrow" />
+              </Link>)}
+            </div>)}
+          </section>}
+          {show('alerts') && <section className="dashboard-panel">
+            <div className="dashboard-panel-heading"><div><h2><ShieldAlert size={17} />{t('nav_alerts')}</h2><p>{t('workspace_alert_note')}</p></div><Link href="/alerts" className="dashboard-text-link">{t('workspace_view_all')}<ArrowUpRight size={14} /></Link></div>
+            {state(alerts, !alerts.data?.alerts.length, 'alerts') || <div className="dashboard-alert-list">{alerts.data?.alerts.map(item => <Link key={item.id} href="/alerts" className="dashboard-alert-row">
+              <span className={`dashboard-alert-dot priority-${item.severity}`} />
+              <div className="min-w-0 flex-1"><h3>{item.title}</h3><p>{item.message}</p><span className={`dashboard-alert-severity priority-${item.severity}`}>{t(`workspace_priority_${item.severity}`)}</span></div><ArrowUpRight size={14} className="dashboard-row-arrow" />
+            </Link>)}</div>}
+          </section>}
         </div>
 
+        {show('patterns') && <section className="dashboard-panel">
+          <div className="dashboard-panel-heading"><div><h2><Sparkles size={17} />{t('patterns_dashboard_card_title')}</h2><p>{t('workspace_patterns_note')}</p></div><Link href="/patterns" className="dashboard-text-link">{t('workspace_view_all')}<ArrowUpRight size={14} /></Link></div>
+          {state(patterns, !topPatterns.length, 'patterns') || <div className="dashboard-pattern-grid">{topPatterns.map(item => {
+            const Icon = PATTERN_TYPE_ICON[item.type] || PATTERN_FALLBACK_ICON;
+            return <Link href="/patterns" key={item.id} className="dashboard-pattern-card"><div className="dashboard-pattern-top"><Icon size={18} strokeWidth={1.6} /><span>{t(PATTERN_TYPE_KEY[item.type] || 'nav_patterns')}</span><ArrowUpRight size={14} /></div><h3>{item.title}</h3><div className="dashboard-pattern-score"><span>{t('workspace_pattern_score')}</span><strong className={scoreColorClass(item.score)}>{item.score}<small>/100</small></strong></div><div className="dashboard-score-track"><span className={scoreColorClass(item.score)} style={{ width: `${Math.max(0, Math.min(100, item.score))}%` }} /></div></Link>;
+          })}</div>}
+        </section>}
+
+        {show('tools') && <section className="dashboard-tools"><h2 className="dashboard-eyebrow">{t('workspace_tools')}</h2><div>{tools.map(tool => <Link href={tool.href} key={tool.href} className="dashboard-tool"><tool.icon size={20} strokeWidth={1.5} /><span><strong>{tool.title}</strong><small>{tool.note}</small></span><ArrowUpRight size={16} /></Link>)}</div></section>}
+        <footer className="dashboard-footer"><span>KO‘Z <span>/</span> {t('workspace_brand_caption')}</span><span>{t('workspace_group_analysis')} · {t('workspace_group_operations')}</span></footer>
       </div>
-    </WorkspaceLayout>
-  );
+    </div>
+  </WorkspaceLayout>;
 }

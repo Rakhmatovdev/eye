@@ -1,7 +1,6 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import type { Detection, Alert, AlertSeverity } from './api';
-import { useAuthStore } from '../store/authStore';
 
 export type LiveConnStatus = 'connecting' | 'live' | 'offline';
 
@@ -17,14 +16,18 @@ const MAX_BACKOFF_MS = 30000;
 
 let liveCounter = 0;
 
-// `/ws` requires a JWT — pass the current access token as a query param so
-// the backend can authenticate the upgrade request (tokenless connections
-// are rejected). Reconnects always read the *latest* token from the store.
+// `/ws` requires the access_token cookie, which the browser attaches to the
+// upgrade handshake automatically — no `?token=` needed (and no way to add
+// one anymore, since the cookie is HttpOnly and invisible to JS by design).
+// NEXT_PUBLIC_WS_URL overrides the target entirely for prod (mirrors
+// NEXT_PUBLIC_API_URL); otherwise falls back to the same host on port 8080,
+// using wss:// when the page itself is HTTPS — a plain ws:// upgrade from an
+// HTTPS page won't carry a Secure cookie, so the scheme must match.
 function resolveWsUrl(): string {
+  if (process.env.NEXT_PUBLIC_WS_URL) return process.env.NEXT_PUBLIC_WS_URL;
   const host = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
-  const base = `ws://${host}:8080/ws`;
-  const token = useAuthStore.getState().token;
-  return token ? `${base}?token=${encodeURIComponent(token)}` : base;
+  const scheme = typeof window !== 'undefined' && window.location.protocol === 'https:' ? 'wss' : 'ws';
+  return `${scheme}://${host}:8080/ws`;
 }
 
 function toDetection(frame: { type: string; data: any }): Detection | null {
@@ -86,6 +89,7 @@ function toAlert(frame: { type: string; data: any }): Alert | null {
     threat_id: a.threat_id || undefined,
     detection_id: a.detection_id || undefined,
     acknowledged: !!a.acknowledged,
+    state: a.state ?? (a.acknowledged ? 'acknowledged' : 'new'),
     ack_by: a.ack_by || undefined,
     ack_at: a.ack_at || undefined,
     created_at: a.created_at ?? new Date().toISOString(),
@@ -93,8 +97,9 @@ function toAlert(frame: { type: string; data: any }): Alert | null {
 }
 
 /**
- * Connects to the backend's authenticated live WebSocket (`/ws?token=...`)
- * and exposes a rolling list of `detection`/`threat` frames plus the
+ * Connects to the backend's authenticated live WebSocket (`/ws`, auth via
+ * the access_token cookie) and exposes a rolling list of `detection`/`threat`
+ * frames plus the
  * connection status, so pages can prepend real-time items onto their seeded
  * demo data. Reconnects automatically on close/error with exponential
  * backoff (1s → 2s → 4s → ... capped at 30s), resetting the backoff after

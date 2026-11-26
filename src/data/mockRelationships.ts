@@ -5,6 +5,11 @@ export interface Relationship {
   type: string;
   label: string;
   properties?: Record<string, string | number>;
+  evidence_source?: string;
+  evidence_ids?: string[];
+  confidence?: number;
+  valid_from?: string;
+  valid_to?: string;
 }
 
 export const mockRelationships: Relationship[] = [

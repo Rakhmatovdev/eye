@@ -32,4 +32,13 @@ test('logs in with seeded admin credentials and lands on the dashboard', async (
   await expect(page.locator('h1')).toContainText(/.+/);
 
   await page.screenshot({ path: 'test-results/screens/login-then-dashboard.png', fullPage: true });
+
+  // Re-save the shared storageState with THIS login's tokens. The backend
+  // keeps exactly one refresh token per user and rotates it on every login,
+  // so the admin login this test just performed *revoked* the refresh token
+  // auth.setup.ts captured in e2e/.auth/user.json. Later specs (notably
+  // refresh.spec.ts, and any spec running after the 15-minute access-token
+  // TTL when the suite runs long) need a refresh token the server still
+  // recognizes — persist the freshly-rotated pair for them.
+  await page.context().storageState({ path: 'e2e/.auth/user.json' });
 });

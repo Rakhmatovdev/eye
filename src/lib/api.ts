@@ -4,6 +4,9 @@ import type { Relationship } from '../data/mockRelationships';
 import type { TimelineEvent } from '../data/mockEvents';
 import type { Case } from '../data/mockCases';
 import type { AuthUser } from '../store/authStore';
+import type { ResolutionCandidate } from './workspaceApi';
+
+export type { ResolutionCandidate };
 
 /* ----------------------------- Backend shapes ---------------------------- */
 
@@ -18,12 +21,11 @@ interface BackendUser {
   mfa_enabled?: boolean;
 }
 
-// LoginData covers both outcomes of POST /auth/login: a normal success (tokens
-// + user) and the MFA challenge (`mfa_required: true`, no tokens/user yet).
+// LoginData covers both outcomes of POST /auth/login: a normal success
+// (user — the access/refresh tokens ride on HttpOnly cookies the backend
+// sets on the response, never in this body) and the MFA challenge
+// (`mfa_required: true`, no user yet).
 interface LoginData {
-  access_token?: string;
-  refresh_token?: string;
-  expires_in?: number;
   user?: BackendUser;
   mfa_required?: boolean;
 }
@@ -43,6 +45,11 @@ interface BackendRelationship {
   entity_id_from: string;
   entity_id_to: string;
   type: string;
+  evidence_source?: string;
+  evidence_ids?: string[];
+  confidence?: number;
+  valid_from?: string;
+  valid_to?: string;
   properties: Record<string, unknown> | null;
   created_at: string;
 }
@@ -163,16 +170,22 @@ export function mapRelationship(r: BackendRelationship): Relationship {
     target: r.entity_id_to,
     type: r.type,
     label: asString(props.label) || r.type,
+    evidence_source: r.evidence_source,
+    evidence_ids: r.evidence_ids,
+    confidence: r.confidence,
+    valid_from: r.valid_from,
+    valid_to: r.valid_to,
   };
 }
 
 /* --------------------------------- API ----------------------------------- */
 
-// LoginResult is either the MFA challenge (no tokens yet — caller must resubmit
-// with `otp`) or a completed login (user + token).
+// LoginResult is either the MFA challenge (caller must resubmit with `otp`)
+// or a completed login (user — the session cookies are already set by the
+// time this resolves).
 export type LoginResult =
   | { mfaRequired: true }
-  | { mfaRequired: false; user: AuthUser; token: string; refreshToken?: string };
+  | { mfaRequired: false; user: AuthUser };
 
 export const authApi = {
   async login(email: string, password: string, otp?: string): Promise<LoginResult> {
@@ -188,8 +201,6 @@ export const authApi = {
     return {
       mfaRequired: false,
       user: mapUser(data.user as BackendUser),
-      token: data.access_token as string,
-      refreshToken: data.refresh_token,
     };
   },
   async logout(): Promise<void> {
@@ -249,12 +260,67 @@ export const mfaApi = {
   },
 };
 
+/* ------------------------------- Sessions ---------------------------------- */
+
+export interface Session {
+  id: string;
+  deviceLabel: string;
+  ip: string;
+  createdAt: string;
+  lastUsedAt: string;
+  isCurrent: boolean;
+}
+
+interface BackendSession {
+  id: string;
+  device_label: string;
+  ip: string;
+  created_at: string;
+  last_used_at: string;
+  is_current: boolean;
+}
+
+function mapSession(s: BackendSession): Session {
+  return {
+    id: s.id,
+    deviceLabel: s.device_label,
+    ip: s.ip,
+    createdAt: s.created_at,
+    lastUsedAt: s.last_used_at,
+    isCurrent: s.is_current,
+  };
+}
+
+export const sessionsApi = {
+  async list(): Promise<Session[]> {
+    const res = await apiClient.get<Envelope<BackendSession[] | null>>('/auth/sessions');
+    return (unwrap(res.data) || []).map(mapSession);
+  },
+  // Revocation takes effect at that device's next silent-refresh attempt
+  // (its access token is a stateless JWT, valid until its own ~15min expiry
+  // regardless of session state) — not an instant kick.
+  async revoke(id: string): Promise<void> {
+    await apiClient.delete(`/auth/sessions/${id}`);
+  },
+  async revokeOthers(): Promise<number> {
+    const res = await apiClient.post<Envelope<{ revoked: number }>>('/auth/sessions/revoke-others');
+    return unwrap(res.data).revoked;
+  },
+};
+
 export const entitiesApi = {
-  async list(params: { search?: string; type?: string } = {}): Promise<Entity[]> {
+  async search(params: { search?: string; type?: string; classification?: string; page: number; limit: number }, signal?: AbortSignal) {
+    const res = await apiClient.get<Envelope<BackendEntity[] | null>>('/entities', {
+      params: { ...params, type: params.type === 'all' ? undefined : params.type, classification: params.classification === 'all' ? undefined : params.classification }, signal,
+    });
+    return { entities: (unwrap(res.data) || []).map(mapEntity), total: res.data.meta?.total ?? 0 };
+  },
+  async list(params: { search?: string; type?: string; classification?: string } = {}): Promise<Entity[]> {
     const res = await apiClient.get<Envelope<BackendEntity[] | null>>('/entities', {
       params: {
         search: params.search || undefined,
         type: params.type && params.type !== 'all' ? params.type : undefined,
+        classification: params.classification && params.classification !== 'all' ? params.classification : undefined,
       },
     });
     return (unwrap(res.data) || []).map(mapEntity);
@@ -263,6 +329,18 @@ export const entitiesApi = {
   async get(id: string): Promise<Entity> {
     const res = await apiClient.get<Envelope<BackendEntity>>(`/entities/${id}`);
     return mapEntity(unwrap(res.data));
+  },
+
+  async exportCsv(params: { search?: string; type?: string; classification?: string } = {}): Promise<Blob> {
+    const res = await apiClient.get('/entities/export.csv', {
+      params: {
+        search: params.search || undefined,
+        type: params.type && params.type !== 'all' ? params.type : undefined,
+        classification: params.classification && params.classification !== 'all' ? params.classification : undefined,
+      },
+      responseType: 'blob',
+    });
+    return res.data;
   },
 
   async expand(nodeId: string): Promise<{ nodes: Entity[]; edges: Relationship[] }> {
@@ -302,6 +380,13 @@ export const entitiesApi = {
   async remove(id: string): Promise<void> {
     await apiClient.delete(`/entities/${id}`);
   },
+
+  async resolutionCandidates(id: string, minConfidence = 0.65): Promise<ResolutionCandidate[]> {
+    const res = await apiClient.get<Envelope<ResolutionCandidate[] | null>>(`/entities/${encodeURIComponent(id)}/resolution-candidates`, {
+      params: { min_confidence: minConfidence },
+    });
+    return unwrap(res.data) || [];
+  },
 };
 
 export const relationshipsApi = {
@@ -324,6 +409,17 @@ export interface Sensor {
   resolution: string;
   classification: string;
   feed_url: string;
+  stream_url?: string;
+  stream_protocol?: string;
+  stream_status?: string;
+  heading?: number;
+  fov?: number;
+  ptz_enabled?: boolean;
+  anpr_enabled?: boolean;
+  face_recognition_enabled?: boolean;
+  fps?: number;
+  bitrate?: number;
+  model?: string;
   last_heartbeat: string;
 }
 
@@ -339,6 +435,47 @@ export interface Detection {
   lng: number;
   area: string;
   timestamp: string;
+  plate_number?: string;
+  plate_normalized?: string;
+  vehicle_color?: string;
+  vehicle_make?: string;
+  match_score?: number;
+  match_reason?: string;
+  snapshot_url?: string;
+}
+
+export interface PlateRecognitionResult {
+  plate: {
+    raw: string;
+    normalized: string;
+    formatted: string;
+    region_code: string;
+    region_name: string;
+    category: string;
+    series: string;
+    number: string;
+    is_valid: boolean;
+  };
+  match_score: number;
+  entity_id?: string;
+  entity_name?: string;
+  watchlist: boolean;
+}
+
+export interface StreamInfo {
+  sensor_id: string;
+  sensor_name: string;
+  stream_url: string;
+  stream_protocol: string;
+  stream_status: string;
+  fps: number;
+  bitrate: number;
+  resolution: string;
+  heading: number;
+  fov: number;
+  vision_cone: [number, number][];
+  snapshot_url: string;
+  last_detection?: Detection;
 }
 
 export interface SensorStats {
@@ -368,6 +505,25 @@ export const sensorsApi = {
   },
   async stats(): Promise<SensorStats> {
     const res = await apiClient.get<Envelope<SensorStats>>('/sensors/stats');
+    return unwrap(res.data);
+  },
+  async stream(sensorId: string): Promise<StreamInfo> {
+    const res = await apiClient.get<Envelope<StreamInfo>>(`/sensors/${sensorId}/stream`);
+    return unwrap(res.data);
+  },
+  async recognizePlate(plate: string): Promise<PlateRecognitionResult> {
+    const res = await apiClient.post<Envelope<PlateRecognitionResult>>('/sensors/lpr/recognize', { plate });
+    return unwrap(res.data);
+  },
+  async ingestDetection(sensorId: string, payload: {
+    kind: string;
+    confidence?: number;
+    plate_number?: string;
+    vehicle_color?: string;
+    vehicle_make?: string;
+    face_embedding?: number[];
+  }): Promise<Detection> {
+    const res = await apiClient.post<Envelope<Detection>>(`/sensors/${sensorId}/ingest`, payload);
     return unwrap(res.data);
   },
 };
@@ -416,6 +572,7 @@ export const militaryApi = {
 /* -------------------------------- Cases ---------------------------------- */
 
 interface BackendCase {
+  updated_at?: string;
   id: string;
   title: string;
   description: string;
@@ -428,6 +585,7 @@ interface BackendCase {
 
 export function mapCase(c: BackendCase): Case {
   return {
+    ...(c.updated_at ? { updated_at: c.updated_at } : {}),
     id: c.id,
     title: c.title,
     description: c.description,
@@ -440,15 +598,20 @@ export function mapCase(c: BackendCase): Case {
 }
 
 export const casesApi = {
+  async listPaged(page=1,limit=20,signal?:AbortSignal):Promise<{cases:Case[];total:number}>{const res=await apiClient.get<Envelope<BackendCase[]>>('/cases/page',{params:{page,limit},signal});return {cases:(unwrap(res.data)||[]).map(mapCase),total:res.data.meta?.total??0};},
   async list(): Promise<Case[]> {
     const res = await apiClient.get<Envelope<BackendCase[] | null>>('/cases');
     return (unwrap(res.data) || []).map(mapCase);
+  },
+  async exportCsv(): Promise<Blob> {
+    const res = await apiClient.get('/cases/export.csv', { responseType: 'blob' });
+    return res.data;
   },
   async get(id: string): Promise<Case> {
     const res = await apiClient.get<Envelope<BackendCase>>(`/cases/${id}`);
     return mapCase(unwrap(res.data));
   },
-  async update(id: string, patch: { title?: string; description?: string; status?: string }): Promise<Case> {
+  async update(id: string, patch: { title?: string; description?: string; status?: string; expected_updated_at?: string }): Promise<Case> {
     const res = await apiClient.patch<Envelope<BackendCase>>(`/cases/${id}`, patch);
     return mapCase(unwrap(res.data));
   },
@@ -459,8 +622,205 @@ export const casesApi = {
     const res = await apiClient.get<Envelope<BackendEntity[] | null>>(`/cases/${caseId}/entities`);
     return (unwrap(res.data) || []).map(mapEntity);
   },
+  async addEntity(caseId: string, entityId: string): Promise<void> {
+    await apiClient.post(`/cases/${caseId}/entities`, { entity_id: entityId });
+  },
   async removeEntity(caseId: string, entityId: string): Promise<void> {
     await apiClient.delete(`/cases/${caseId}/entities/${entityId}`);
+  },
+};
+
+export type WorkItemStatus = 'open' | 'in_review' | 'changes_requested' | 'approved' | 'completed';
+export interface WorkItemHistory { actor_id: string; action: string; comment?: string; at: string }
+export interface WorkItem {
+  id: string; case_id: string; title: string; description: string; assignee_id: string;
+  reviewer_id?: string; due_at?: string; status: WorkItemStatus; created_by: string;
+  created_at: string; updated_at: string; history: WorkItemHistory[]; overdue: boolean;
+}
+export const workflowApi = {
+  async list(caseId: string): Promise<WorkItem[]> {
+    const res = await apiClient.get<Envelope<WorkItem[] | null>>(`/cases/${caseId}/tasks`);
+    return unwrap(res.data) || [];
+  },
+  async create(caseId: string, input: { title: string; description: string; assignee_id: string; reviewer_id?: string; due_at?: string }): Promise<WorkItem> {
+    const res = await apiClient.post<Envelope<WorkItem>>(`/cases/${caseId}/tasks`, input);
+    return unwrap(res.data);
+  },
+  async transition(caseId: string, taskId: string, action: string, comment = ''): Promise<WorkItem> {
+    const res = await apiClient.post<Envelope<WorkItem>>(`/cases/${caseId}/tasks/${taskId}/transition`, { action, comment });
+    return unwrap(res.data);
+  },
+};
+
+/* ----------------------------- Attachments --------------------------------- */
+
+// Files attached to an entity or a case (backend: internal/attachments,
+// GridFS-backed). subjectType is the URL resource segment itself
+// ("entities"/"cases") rather than a separate "entity"/"case" enum that
+// would just need mapping back to this anyway.
+export type AttachmentSubject = 'entities' | 'cases';
+
+export interface Attachment {
+  id: string;
+  filename: string;
+  content_type: string;
+  size: number;
+  uploaded_by: string;
+  sha256: string;
+  evidence_source?: string;
+  collected_at?: string;
+  notes?: string;
+  created_at: string;
+}
+
+export interface AttachmentVerification {
+  attachment_id: string;
+  status: 'valid' | 'mismatch' | 'unverified';
+  expected_sha256?: string;
+  actual_sha256?: string;
+}
+export interface AttachmentText { attachment_id: string; subject_type: string; subject_id: string; filename: string; text: string; extractor: string; extracted_at: string }
+export interface AttachmentTextHit { attachment_id: string; filename: string; snippet: string }
+
+export const attachmentsApi = {
+  async list(subjectType: AttachmentSubject, subjectId: string): Promise<Attachment[]> {
+    const res = await apiClient.get<Envelope<Attachment[] | null>>(`/${subjectType}/${subjectId}/attachments`);
+    return unwrap(res.data) || [];
+  },
+  async upload(subjectType: AttachmentSubject, subjectId: string, file: File, metadata: { evidenceSource?: string; collectedAt?: string; notes?: string } = {}): Promise<Attachment> {
+    // `apiClient`'s default Content-Type is "application/json" — axios 1.x
+    // only skips its FormData-to-JSON transform (formDataToJSON) when the
+    // resolved Content-Type is NOT application/json; it does not clear a
+    // JSON Content-Type just because the body happens to be FormData (see
+    // node_modules/axios/lib/defaults/index.js transformRequest). Left as
+    // the default, axios silently serializes this FormData into a JSON
+    // string instead of sending it as multipart — the backend then sees no
+    // "file" field at all and 400s with "file is required" (found by
+    // actually driving this through a browser — frontend/e2e/attachments.spec.ts —
+    // not just curl, which bypasses this axios codepath entirely). Setting
+    // Content-Type to undefined here overrides the instance default for
+    // just this request, so axios leaves the FormData untouched and the
+    // browser sets its own "multipart/form-data; boundary=..." header.
+    const form = new FormData();
+    form.append('file', file);
+    if (metadata.evidenceSource) form.append('evidence_source', metadata.evidenceSource);
+    if (metadata.collectedAt) form.append('collected_at', metadata.collectedAt);
+    if (metadata.notes) form.append('notes', metadata.notes);
+    const res = await apiClient.post<Envelope<Attachment>>(`/${subjectType}/${subjectId}/attachments`, form, {
+      headers: { 'Content-Type': undefined },
+    });
+    return unwrap(res.data);
+  },
+  async verify(subjectType: AttachmentSubject, subjectId: string, attachmentId: string): Promise<AttachmentVerification> {
+    const res = await apiClient.get<Envelope<AttachmentVerification>>(`/${subjectType}/${subjectId}/attachments/${attachmentId}/verify`);
+    return unwrap(res.data);
+  },
+  async extractText(subjectType: AttachmentSubject, subjectId: string, attachmentId: string): Promise<AttachmentText> {
+    const res = await apiClient.post<Envelope<AttachmentText>>(`/${subjectType}/${subjectId}/attachments/${attachmentId}/extract-text`);
+    return unwrap(res.data);
+  },
+  async text(subjectType: AttachmentSubject, subjectId: string, attachmentId: string): Promise<AttachmentText> {
+    const res = await apiClient.get<Envelope<AttachmentText>>(`/${subjectType}/${subjectId}/attachments/${attachmentId}/text`);
+    return unwrap(res.data);
+  },
+  async searchText(subjectType: AttachmentSubject, subjectId: string, query: string): Promise<AttachmentTextHit[]> {
+    const res = await apiClient.get<Envelope<AttachmentTextHit[] | null>>(`/${subjectType}/${subjectId}/attachments/search-text`, { params: { q: query } });
+    return unwrap(res.data) || [];
+  },
+  async download(subjectType: AttachmentSubject, subjectId: string, attachmentId: string): Promise<Blob> {
+    const res = await apiClient.get(`/${subjectType}/${subjectId}/attachments/${attachmentId}`, { responseType: 'blob' });
+    return res.data;
+  },
+  async remove(subjectType: AttachmentSubject, subjectId: string, attachmentId: string): Promise<void> {
+    await apiClient.delete(`/${subjectType}/${subjectId}/attachments/${attachmentId}`);
+  },
+};
+
+/* ------------------------------- Projects --------------------------------- */
+
+export type ProjectStatus = 'active' | 'archived';
+
+export interface Project {
+  id: string;
+  title: string;
+  description: string;
+  status: ProjectStatus;
+  owner_id: string;
+  my_role?: 'owner' | 'admin' | 'viewer' | 'analyst' | 'reviewer';
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProjectCaseSummary {
+  id: string;
+  title: string;
+  status: string;
+  priority: string;
+  classification: string;
+  created_at: string;
+}
+
+export interface ProjectMember {
+  project_id: string;
+  user_id: string;
+  user_name?: string;
+  user_email?: string;
+  role: 'viewer' | 'analyst' | 'reviewer';
+  added_by: string;
+  created_at: string;
+}
+
+export interface ProjectMemberCandidate {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+}
+
+export const projectsApi = {
+  async list(): Promise<Project[]> {
+    const res = await apiClient.get<Envelope<Project[] | null>>('/projects');
+    return unwrap(res.data) || [];
+  },
+  async get(id: string): Promise<Project> {
+    const res = await apiClient.get<Envelope<Project>>(`/projects/${id}`);
+    return unwrap(res.data);
+  },
+  async create(input: { title: string; description?: string }): Promise<Project> {
+    const res = await apiClient.post<Envelope<Project>>('/projects', input);
+    return unwrap(res.data);
+  },
+  async update(id: string, patch: { title?: string; description?: string; status?: ProjectStatus }): Promise<Project> {
+    const res = await apiClient.patch<Envelope<Project>>(`/projects/${id}`, patch);
+    return unwrap(res.data);
+  },
+  async remove(id: string): Promise<void> {
+    await apiClient.delete(`/projects/${id}`);
+  },
+  async cases(id: string): Promise<ProjectCaseSummary[]> {
+    const res = await apiClient.get<Envelope<ProjectCaseSummary[] | null>>(`/projects/${id}/cases`);
+    return unwrap(res.data) || [];
+  },
+  async addCase(id: string, caseId: string): Promise<void> {
+    await apiClient.post(`/projects/${id}/cases`, { case_id: caseId });
+  },
+  async removeCase(id: string, caseId: string): Promise<void> {
+    await apiClient.delete(`/projects/${id}/cases/${caseId}`);
+  },
+  async members(id: string): Promise<ProjectMember[]> {
+    const res = await apiClient.get<Envelope<ProjectMember[] | null>>(`/projects/${id}/members`);
+    return unwrap(res.data) || [];
+  },
+  async addMember(id: string, userId: string, role: ProjectMember['role']): Promise<ProjectMember> {
+    const res = await apiClient.post<Envelope<ProjectMember>>(`/projects/${id}/members`, { user_id: userId, role });
+    return unwrap(res.data);
+  },
+  async removeMember(id: string, userId: string): Promise<void> {
+    await apiClient.delete(`/projects/${id}/members/${userId}`);
+  },
+  async memberCandidates(id: string, q = ''): Promise<ProjectMemberCandidate[]> {
+    const res = await apiClient.get<Envelope<ProjectMemberCandidate[] | null>>(`/projects/${id}/member-candidates`, { params: { q: q || undefined } });
+    return unwrap(res.data) || [];
   },
 };
 
@@ -471,16 +831,32 @@ export interface ChatTurn {
   content: string;
 }
 
+export interface AIEvidence {
+  id: string;
+  entity_id: string;
+  attachment_id?: string;
+  classification: string;
+  excerpt: string;
+  snapshot_sha256: string;
+  file_sha256?: string;
+  retrieved_at: string;
+}
+export interface AIClaim { text: string; kind: 'observation' | 'inference'; citation_ids: string[] }
+export interface AIChatResponse { reply: string; source: string; citations: AIEvidence[]; claims: AIClaim[]; grounding: 'references_checked' | 'insufficient_evidence' }
+
 export interface ChatHistoryEntry {
   message: string;
   reply: string;
   source: string;
   ts: string;
+  citations?: AIEvidence[];
+  claims?: AIClaim[];
+  grounding?: AIChatResponse['grounding'];
 }
 
 export const aiApi = {
-  async chat(message: string, history: ChatTurn[] = [], context?: string): Promise<{ reply: string; source: string }> {
-    const res = await apiClient.post<Envelope<{ reply: string; source: string }>>('/ai/chat', {
+  async chat(message: string, history: ChatTurn[] = [], context?: string): Promise<AIChatResponse> {
+    const res = await apiClient.post<Envelope<AIChatResponse>>('/ai/chat', {
       message,
       history,
       context,
@@ -522,6 +898,10 @@ export interface Alert {
   threat_id?: string;
   detection_id?: string;
   acknowledged: boolean;
+  state: 'new' | 'acknowledged' | 'investigating' | 'resolved' | 'false_positive';
+  assigned_to?: string;
+  resolution_note?: string;
+  history?: { actor_id: string; action: string; note?: string; at: string }[];
   ack_by?: string;
   ack_at?: string;
   created_at: string;
@@ -560,6 +940,14 @@ export const alertsApi = {
     const res = await apiClient.patch<Envelope<Alert>>(`/alerts/${id}/ack`);
     return unwrap(res.data);
   },
+  async setState(id: string, state: Alert['state'], note = ''): Promise<Alert> {
+    const res = await apiClient.patch<Envelope<Alert>>(`/alerts/${id}/state`, { state, note });
+    return unwrap(res.data);
+  },
+  async assign(id: string, userId: string): Promise<Alert> {
+    const res = await apiClient.patch<Envelope<Alert>>(`/alerts/${id}/assign`, { user_id: userId });
+    return unwrap(res.data);
+  },
 };
 
 /* ------------------------------- Watchlist -------------------------------- */
@@ -589,6 +977,35 @@ export const watchlistApi = {
   },
   async remove(id: string): Promise<void> {
     await apiClient.delete(`/watchlist/${id}`);
+  },
+};
+
+export interface SavedSearch {
+  id: string;
+  name: string;
+  query: string;
+  type: string;
+  classification: string;
+  created_at: string;
+  updated_at: string;
+	alerts_enabled: boolean;
+	last_checked_at: string;
+}
+
+export const savedSearchesApi = {
+	async setAlerts(id: string, enabled: boolean): Promise<SavedSearch> {
+		return unwrap((await apiClient.patch<Envelope<SavedSearch>>(`/saved-searches/${encodeURIComponent(id)}/alerts`, { alerts_enabled: enabled })).data);
+	},
+  async list(): Promise<SavedSearch[]> {
+    const res = await apiClient.get<Envelope<SavedSearch[] | null>>('/saved-searches');
+    return unwrap(res.data) || [];
+  },
+  async create(input: { name: string; query: string; type: string; classification: string }): Promise<SavedSearch> {
+    const res = await apiClient.post<Envelope<SavedSearch>>('/saved-searches', input);
+    return unwrap(res.data);
+  },
+  async remove(id: string): Promise<void> {
+    await apiClient.delete(`/saved-searches/${id}`);
   },
 };
 
@@ -635,7 +1052,7 @@ export const graphApi = {
 
 /* ------------------------------- Patterns --------------------------------- */
 
-export type PatternType = 'co_location' | 'hub_entity' | 'threat_correlation' | 'burst_activity';
+export type PatternType = 'co_location' | 'hub_entity' | 'threat_correlation' | 'burst_activity' | 'statistical_outlier';
 
 export interface Pattern {
   id: string;
@@ -672,24 +1089,41 @@ export const reportsApi = {
     const res = await apiClient.get<Envelope<Report>>(`/cases/${id}/report`);
     return unwrap(res.data);
   },
+  async entityPdf(id: string): Promise<Blob> {
+    const res = await apiClient.get(`/entities/${id}/report/pdf`, { responseType: 'blob' });
+    return res.data;
+  },
+  async entityCsv(id: string): Promise<Blob> {
+    const res = await apiClient.get(`/entities/${id}/report/csv`, { responseType: 'blob' });
+    return res.data;
+  },
+  async casePdf(id: string): Promise<Blob> {
+    const res = await apiClient.get(`/cases/${id}/report/pdf`, { responseType: 'blob' });
+    return res.data;
+  },
+  async caseCsv(id: string): Promise<Blob> {
+    const res = await apiClient.get(`/cases/${id}/report/csv`, { responseType: 'blob' });
+    return res.data;
+  },
 };
 
 // Build a graph from the whole entity set: entities are nodes, and each node's
 // neighbourhood is fetched via /graph/expand and merged (deduped). There is no
 // "list all relationships" endpoint, so this is the MVP way to assemble edges.
-export async function fetchGraph(limit = 40): Promise<{ nodes: Entity[]; edges: Relationship[] }> {
-  const entities = await entitiesApi.list();
+export async function fetchGraph(limit = 40, caseId?: string): Promise<{ nodes: Entity[]; edges: Relationship[]; total_nodes?: number; truncated?: boolean }> {
+  if(caseId){const res=await apiClient.get<Envelope<{nodes:BackendEntity[];edges:BackendRelationship[];total_nodes:number;truncated:boolean}>>(`/cases/${encodeURIComponent(caseId)}/graph`);const data=unwrap(res.data);return {nodes:(data.nodes??[]).map(mapEntity),edges:(data.edges??[]).map(mapRelationship),total_nodes:data.total_nodes,truncated:data.truncated};}
+  const entities = caseId ? await casesApi.entities(caseId) : await entitiesApi.list();
   const nodes = entities.slice(0, limit);
 
   const edgeMap = new Map<string, Relationship>();
   const nodeMap = new Map<string, Entity>();
   nodes.forEach((n) => nodeMap.set(n.id, n));
 
-  const results = await Promise.allSettled(nodes.map((n) => entitiesApi.expand(n.id)));
+  // A missing expansion is an incomplete graph, not evidence of no relationships.
+  const results = await Promise.all(nodes.map((n) => entitiesApi.expand(n.id)));
   for (const r of results) {
-    if (r.status !== 'fulfilled') continue;
-    r.value.edges.forEach((e) => edgeMap.set(e.id, e));
-    r.value.nodes.forEach((n) => {
+    r.edges.forEach((e) => edgeMap.set(e.id, e));
+    if (!caseId) r.nodes.forEach((n) => {
       if (!nodeMap.has(n.id)) nodeMap.set(n.id, n);
     });
   }

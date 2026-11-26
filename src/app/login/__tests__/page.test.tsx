@@ -40,8 +40,6 @@ describe('LoginPage', () => {
     mockedLogin.mockResolvedValueOnce({
       mfaRequired: false,
       user: { id: 'u1', name: 'Analyst', email: 'a@b.com', role: 'analyst', clearance: 'SECRET' },
-      token: 'access-1',
-      refreshToken: 'refresh-1',
     });
 
     render(<LoginPage />);
@@ -49,7 +47,6 @@ describe('LoginPage', () => {
 
     await waitFor(() => expect(push).toHaveBeenCalledWith('/dashboard'));
     expect(useAuthStore.getState().isAuthenticated).toBe(true);
-    expect(useAuthStore.getState().token).toBe('access-1');
   });
 
   it('switches to the OTP challenge screen when the API reports mfaRequired', async () => {
@@ -77,8 +74,6 @@ describe('LoginPage', () => {
     mockedLogin.mockResolvedValueOnce({
       mfaRequired: false,
       user: { id: 'u1', name: 'Analyst', email: 'a@b.com', role: 'analyst', clearance: 'SECRET' },
-      token: 'access-2',
-      refreshToken: 'refresh-2',
     });
 
     await user.type(otpInput, '123456');

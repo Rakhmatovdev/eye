@@ -1,0 +1,16 @@
+import React from 'react';
+import {render,screen,waitFor} from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import {QueryClient,QueryClientProvider} from '@tanstack/react-query';
+import AnalyticsHistory from '../AnalyticsHistory';
+import AnalyticsSources from '../AnalyticsSources';
+import {growthApi} from '../../../lib/analyticsGrowth';
+import type {AnalyticsBrief} from '../../../lib/briefAnalytics';
+import {useLocaleStore} from '../../../store/localeStore';
+jest.mock('../../../lib/analyticsGrowth',()=>({growthApi:{sources:jest.fn(),monitor:jest.fn(),history:jest.fn(),saveMonitor:jest.fn(),createSource:jest.fn(),observe:jest.fn()}}));
+const plan={id:'p',revision:1,requirements:[{id:'r',text:'Completion target',line:1,metric:'external',source_id:'s',target:90,operator:'gte'}]} as AnalyticsBrief;
+beforeEach(()=>{jest.resetAllMocks();useLocaleStore.getState().setLocale('en');jest.mocked(growthApi.sources).mockResolvedValue([]);jest.mocked(growthApi.monitor).mockResolvedValue({enabled:false,alerts:false,interval_minutes:1,next_at:''});jest.mocked(growthApi.history).mockResolvedValue({points:[],days:1,bucket:'hour',retention_days:90});});
+function mount(child:React.ReactNode){return render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}})}>{child}</QueryClientProvider>);}
+test('personal monitoring requires an explicit save and preserves independent alert choice',async()=>{jest.mocked(growthApi.saveMonitor).mockResolvedValue({enabled:true,alerts:true,interval_minutes:1,next_at:''});mount(<AnalyticsHistory caseId="case" plan={plan}/>);await screen.findByRole('checkbox',{name:'Collect history while the panel is closed'});expect(growthApi.saveMonitor).not.toHaveBeenCalled();await userEvent.click(screen.getByRole('checkbox',{name:'Collect history while the panel is closed'}));await userEvent.click(screen.getByRole('checkbox',{name:'Inbox notifications for KPI issues and recovery'}));await userEvent.click(screen.getByRole('button',{name:'Save monitoring'}));await waitFor(()=>expect(growthApi.saveMonitor).toHaveBeenCalledWith('case','p',{enabled:true,alerts:true,interval_minutes:1}));});
+test('saved history shows unavailable values and switches the requested period',async()=>{jest.mocked(growthApi.history).mockResolvedValue({points:[{at:'2026-10-12T10:00:00Z',revision:1,kpis:[{...plan.requirements[0],value:null,unit:'percent',status:'no_data'}]}],days:1,bucket:'hour',retention_days:90});mount(<AnalyticsHistory caseId="case" plan={plan}/>);await screen.findByText('—');await userEvent.selectOptions(screen.getByRole('combobox',{name:'Period'}),'7');await waitFor(()=>expect(growthApi.history).toHaveBeenCalledWith('case','p',7));});
+test('readers can inspect source freshness without mutation controls',async()=>{jest.mocked(growthApi.sources).mockResolvedValue([{id:'s',name:'Imported completion',kind:'import',unit:'percent',freshness_minutes:1,poll_minutes:0,value:42,observed_at:'2000-01-01T00:00:00Z'}]);mount(<AnalyticsSources caseId="case" canWrite={false}/>);await userEvent.click(screen.getByText('External KPI sources'));await screen.findByText('Stale data');expect(screen.queryByRole('button',{name:'Delete source'})).not.toBeInTheDocument();expect(screen.queryByText('Add source')).not.toBeInTheDocument();});

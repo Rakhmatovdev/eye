@@ -8,20 +8,15 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 const BASE_PATH = `${API_URL}/api/v1`;
 
 // Shared axios instance. Base points at the versioned API so callers use
-// short paths like `/auth/login`, `/entities`, `/graph/expand`.
+// short paths like `/auth/login`, `/entities`, `/graph/expand`. Auth rides on
+// the HttpOnly access_token/refresh_token cookies the backend sets on
+// login/refresh (see backend's internal/auth/handler.go) — withCredentials
+// is what makes the browser actually attach/accept them.
 export const apiClient = axios.create({
   baseURL: BASE_PATH,
   timeout: 30000,
   headers: { 'Content-Type': 'application/json' },
-});
-
-// Attach the bearer token from the auth store on every request.
-apiClient.interceptors.request.use((config) => {
-  const token = useAuthStore.getState().token;
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
+  withCredentials: true,
 });
 
 // Standard success envelope: { success, data, meta }.
@@ -40,7 +35,9 @@ export function unwrap<T>(payload: Envelope<T>): T {
 // Human-readable message out of an axios error following our envelope.
 export function apiErrorMessage(err: unknown, fallback = 'Request failed'): string {
   if (axios.isAxiosError(err)) {
-    return err.response?.data?.error?.message || err.message || fallback;
+    const message=err.response?.data?.error?.message || err.message || fallback;
+    const requestID=err.response?.headers?.['x-request-id'];
+    return typeof requestID==='string' && /^[A-Za-z0-9_-]{1,100}$/.test(requestID)?message+' · Request ID: '+requestID:message;
   }
   return fallback;
 }
@@ -51,40 +48,33 @@ interface RetriableConfig extends InternalAxiosRequestConfig {
 
 function isAuthBootstrapEndpoint(url?: string): boolean {
   if (!url) return false;
-  return url.includes('/auth/refresh') || url.includes('/auth/login');
+  return (
+    url.includes('/auth/refresh') ||
+    url.includes('/auth/login') ||
+    url.includes('/auth/forgot-password') ||
+    url.includes('/auth/reset-password')
+  );
 }
 
 function forceLogout() {
   useAuthStore.getState().logout();
-  if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
+  const publicPages = ['/login', '/forgot-password', '/reset-password'];
+  if (typeof window !== 'undefined' && !publicPages.includes(window.location.pathname.replace(/\/$/, ''))) {
     window.location.href = '/login';
   }
 }
 
 // Single-flight refresh: concurrent 401s share one in-flight refresh call
 // instead of each firing their own POST /auth/refresh.
-let refreshPromise: Promise<string> | null = null;
+let refreshPromise: Promise<void> | null = null;
 
-async function refreshAccessToken(): Promise<string> {
-  const refreshToken = useAuthStore.getState().refreshToken;
-  if (!refreshToken) {
-    throw new Error('No refresh token available');
-  }
-  // Plain axios (not `apiClient`) so this call never re-enters the response
-  // interceptor below and can't recurse into itself on a 401.
-  const res = await axios.post<Envelope<{ access_token: string; refresh_token?: string }>>(
-    `${BASE_PATH}/auth/refresh`,
-    { refresh_token: refreshToken },
-    { headers: { 'Content-Type': 'application/json' } }
-  );
-  const accessToken = res.data?.data?.access_token;
-  if (!accessToken) {
-    throw new Error('Refresh response missing access_token');
-  }
-  // The backend rotates the refresh token on every refresh — persist the new
-  // one or the next silent refresh would fail against the revoked old token.
-  useAuthStore.getState().setAccessToken(accessToken, res.data?.data?.refresh_token ?? null);
-  return accessToken;
+async function refreshSession(): Promise<void> {
+  // No body, no response tokens to read — the browser sends the
+  // refresh_token cookie automatically (it's scoped to Path=/api/v1/auth)
+  // and the backend responds with fresh Set-Cookie headers for both
+  // cookies. Plain axios (not `apiClient`) so this call never re-enters the
+  // response interceptor below and can't recurse into itself on a 401.
+  await axios.post(`${BASE_PATH}/auth/refresh`, undefined, { withCredentials: true, timeout: 15000 });
 }
 
 // On 401: try a silent refresh + single retry of the original request before
@@ -102,17 +92,19 @@ apiClient.interceptors.response.use(
         originalRequest._retry = true;
         try {
           if (!refreshPromise) {
-            refreshPromise = refreshAccessToken().finally(() => {
+            refreshPromise = refreshSession().finally(() => {
               refreshPromise = null;
             });
           }
-          const newToken = await refreshPromise;
-          originalRequest.headers = originalRequest.headers ?? {};
-          originalRequest.headers.Authorization = `Bearer ${newToken}`;
+          await refreshPromise;
           return apiClient(originalRequest);
-        } catch {
-          forceLogout();
-          return Promise.reject(error);
+        } catch (refreshError) {
+          if (axios.isAxiosError(refreshError) && refreshError.response?.status === 401) {
+            forceLogout();
+            return Promise.reject(error);
+          }
+          // A network outage or server failure is not an expired session.
+          return Promise.reject(refreshError);
         }
       }
       // Already retried once and still 401 — give up.

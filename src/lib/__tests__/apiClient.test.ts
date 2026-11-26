@@ -48,6 +48,10 @@ describe('apiErrorMessage()', () => {
   });
 });
 
+// Auth now rides entirely on HttpOnly cookies the real browser attaches
+// automatically — there's no token in JS to inspect or swap, so these tests
+// simulate "cookie became valid after a refresh" purely via response
+// sequencing (401 then 200) rather than by asserting on request headers.
 describe('apiClient response interceptor (silent refresh on 401)', () => {
   let apiMock: MockAdapter;
   let rootMock: MockAdapter;
@@ -56,15 +60,11 @@ describe('apiClient response interceptor (silent refresh on 401)', () => {
 
   beforeEach(() => {
     apiMock = new MockAdapter(apiClient);
-    // `refreshAccessToken()` inside apiClient.ts calls the *default* axios
-    // export directly (not the `apiClient` instance) so it never re-enters
-    // this same response interceptor. Mock that default instance separately.
+    // refreshSession() inside apiClient.ts calls the *default* axios export
+    // directly (not the `apiClient` instance) so it never re-enters this same
+    // response interceptor. Mock that default instance separately.
     rootMock = new MockAdapter(axios);
-    useAuthStore.getState().login(
-      { id: 'u1', name: 'Analyst', email: 'a@b.com', role: 'analyst', clearance: 'SECRET' },
-      'expired-access-token',
-      'valid-refresh-token'
-    );
+    useAuthStore.getState().login({ id: 'u1', name: 'Analyst', email: 'a@b.com', role: 'analyst', clearance: 'SECRET' });
     // forceLogout() (exercised below) does `window.location.href = '/login'`
     // on a genuine logout — jsdom doesn't implement real navigation and logs
     // a "Not implemented" console.error for it. That's expected test noise,
@@ -73,52 +73,45 @@ describe('apiClient response interceptor (silent refresh on 401)', () => {
   });
 
   afterEach(() => {
+    window.history.replaceState(null, '', '/');
     apiMock.restore();
     rootMock.restore();
     useAuthStore.getState().logout();
     consoleErrorSpy.mockRestore();
   });
 
-  it('retries the original request with a new token after a silent refresh', async () => {
+  it('retries the original request after a silent refresh', async () => {
     apiMock
       .onGet('/entities')
       .replyOnce(401)
       .onGet('/entities')
       .replyOnce(200, { success: true, data: [{ id: 'e1' }] });
 
-    rootMock.onPost(/\/auth\/refresh$/).replyOnce(200, {
-      success: true,
-      data: { access_token: 'new-access-token', refresh_token: 'new-refresh-token' },
-    });
+    rootMock.onPost(/\/auth\/refresh$/).replyOnce(200, { success: true, data: {} });
 
     const res = await apiClient.get('/entities');
 
     expect(res.status).toBe(200);
     expect(res.data.data).toEqual([{ id: 'e1' }]);
-    expect(useAuthStore.getState().token).toBe('new-access-token');
-    expect(useAuthStore.getState().refreshToken).toBe('new-refresh-token');
+    expect(useAuthStore.getState().isAuthenticated).toBe(true);
   });
 
   it('shares a single in-flight refresh across concurrent 401s', async () => {
-    apiMock
-      .onGet('/entities')
-      .reply(function respond(config) {
-        // First call to each URL 401s once; the retried call (marked via the
-        // Authorization header having been swapped) succeeds.
-        const isRetry = config.headers?.Authorization === 'Bearer new-access-token';
-        return isRetry ? [200, { success: true, data: 'ok-entities' }] : [401];
-      });
-    apiMock
-      .onGet('/cases')
-      .reply(function respond(config) {
-        const isRetry = config.headers?.Authorization === 'Bearer new-access-token';
-        return isRetry ? [200, { success: true, data: 'ok-cases' }] : [401];
-      });
+    let entitiesCalls = 0;
+    apiMock.onGet('/entities').reply(() => {
+      entitiesCalls += 1;
+      return entitiesCalls === 1 ? [401] : [200, { success: true, data: 'ok-entities' }];
+    });
+    let casesCalls = 0;
+    apiMock.onGet('/cases').reply(() => {
+      casesCalls += 1;
+      return casesCalls === 1 ? [401] : [200, { success: true, data: 'ok-cases' }];
+    });
 
     let refreshCalls = 0;
     rootMock.onPost(/\/auth\/refresh$/).reply(() => {
       refreshCalls += 1;
-      return [200, { success: true, data: { access_token: 'new-access-token', refresh_token: 'new-refresh-token' } }];
+      return [200, { success: true, data: {} }];
     });
 
     const [r1, r2] = await Promise.all([apiClient.get('/entities'), apiClient.get('/cases')]);
@@ -128,21 +121,49 @@ describe('apiClient response interceptor (silent refresh on 401)', () => {
     expect(refreshCalls).toBe(1);
   });
 
-  it('logs out and rejects when the refresh token itself is invalid', async () => {
+  it('logs out and rejects when the refresh itself fails (e.g. no valid refresh cookie)', async () => {
     apiMock.onGet('/entities').reply(401);
     rootMock.onPost(/\/auth\/refresh$/).replyOnce(401);
 
     await expect(apiClient.get('/entities')).rejects.toBeTruthy();
     expect(useAuthStore.getState().isAuthenticated).toBe(false);
-    expect(useAuthStore.getState().token).toBeNull();
   });
 
-  it('does not attempt a refresh for a 401 on /auth/login itself', async () => {
-    apiMock.onPost('/auth/login').reply(401, { success: false, error: { message: 'bad creds' } });
+  it.each(['/login', '/forgot-password', '/reset-password?token=example'])('keeps the public %s page open after an expired session', async path => {
+    window.history.replaceState(null, '', path);
+    apiMock.onGet('/auth/me').reply(401);
+    rootMock.onPost(/\/auth\/refresh$/).reply(401);
+    await expect(apiClient.get('/auth/me')).rejects.toBeTruthy();
+    expect(useAuthStore.getState().isAuthenticated).toBe(false);
+    expect(window.location.pathname + window.location.search).toBe(path);
+    // jsdom reports navigation attempts to console.error; public pages should not navigate.
+    expect(consoleErrorSpy).not.toHaveBeenCalled();
+  });
 
-    await expect(apiClient.post('/auth/login', {})).rejects.toBeTruthy();
-    // No refresh call should have been made for the login endpoint's own 401.
+  it.each(['/auth/login', '/auth/forgot-password', '/auth/reset-password'])('does not attempt a refresh for a 401 on %s itself', async endpoint => {
+    apiMock.onPost(endpoint).reply(401, { success: false, error: { message: 'request rejected' } });
+
+    await expect(apiClient.post(endpoint, {})).rejects.toBeTruthy();
+    // Public auth endpoints must never trigger the silent-refresh loop.
     expect(rootMock.history.post?.length ?? 0).toBe(0);
     expect(useAuthStore.getState().isAuthenticated).toBe(false);
+  });
+
+  it.each([500, 503, 429])('preserves the session when refresh returns %s', async (status) => {
+    apiMock.onGet('/entities').reply(401);
+    rootMock.onPost(/\/auth\/refresh$/).replyOnce(status);
+    await expect(apiClient.get('/entities')).rejects.toMatchObject({ response: { status } });
+    expect(useAuthStore.getState().isAuthenticated).toBe(true);
+  });
+
+  it('bounds a refresh timeout and allows a later request to recover', async () => {
+    apiMock.onGet('/entities').replyOnce(401);
+    rootMock.onPost(/\/auth\/refresh$/).timeoutOnce();
+    await expect(apiClient.get('/entities')).rejects.toMatchObject({ code: 'ECONNABORTED' });
+    expect(rootMock.history.post[0].timeout).toBe(15000);
+    expect(useAuthStore.getState().isAuthenticated).toBe(true);
+    apiMock.onGet('/entities').replyOnce(401).onGet('/entities').replyOnce(200, { data: [] });
+    rootMock.onPost(/\/auth\/refresh$/).replyOnce(200);
+    await expect(apiClient.get('/entities')).resolves.toMatchObject({ status: 200 });
   });
 });

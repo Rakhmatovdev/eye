@@ -1,196 +1,74 @@
 'use client';
-import React, { useEffect, useRef, useState } from 'react';
+import {useCallback,useEffect,useMemo,useRef,useState} from 'react';
 import cytoscape from 'cytoscape';
-import { mockEntities, type Entity } from '../../data/mockEntities';
-import { mockRelationships, type Relationship } from '../../data/mockRelationships';
-import { fetchGraph } from '../../lib/api';
-import { useWorkspaceStore } from '../../store/workspaceStore';
-import { ZoomIn, ZoomOut, Maximize2, ShieldAlert } from 'lucide-react';
+import {useQuery,useMutation,useQueryClient} from '@tanstack/react-query';
 import Link from 'next/link';
-
-export default function CytoscapeGraph() {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [cyInstance, setCyInstance] = useState<cytoscape.Core | null>(null);
-  const setSelectedEntityId = useWorkspaceStore(state => state.setSelectedEntityId);
-  const [activeDetails, setActiveDetails] = useState<Entity | null>(null);
-
-  const [graph, setGraph] = useState<{ nodes: Entity[]; edges: Relationship[] } | null>(null);
-  const [usingFallback, setUsingFallback] = useState(false);
-
-  // Load the real graph from the backend; fall back to bundled demo data when
-  // the API is unreachable or returns nothing.
-  useEffect(() => {
-    let cancelled = false;
-    fetchGraph()
-      .then((g) => {
-        if (cancelled) return;
-        if (g.nodes.length === 0) {
-          setGraph({ nodes: mockEntities.slice(0, 15), edges: mockRelationships });
-          setUsingFallback(true);
-        } else {
-          setGraph(g);
-          setUsingFallback(false);
-        }
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setGraph({ nodes: mockEntities.slice(0, 15), edges: mockRelationships });
-        setUsingFallback(true);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!containerRef.current || !graph) return;
-
-    const nodes = graph.nodes.map(e => ({
-      data: {
-        id: e.id,
-        label: e.name,
-        type: e.type,
-        classification: e.classification
-      }
-    }));
-
-    // Only render edges whose endpoints are present in the node set.
-    const nodeIds = new Set(graph.nodes.map(n => n.id));
-    const edges = graph.edges
-      .filter(r => nodeIds.has(r.source) && nodeIds.has(r.target))
-      .map(r => ({
-        data: {
-          id: r.id,
-          source: r.source,
-          target: r.target,
-          label: r.label
-        }
-      }));
-
-    const cy = cytoscape({
-      container: containerRef.current,
-      elements: [...nodes, ...edges],
-      style: [
-        {
-          selector: 'node',
-          style: {
-            'background-color': '#06B6D4',
-            'label': 'data(label)',
-            'color': '#E2E8F0',
-            'font-family': 'monospace',
-            'font-size': '10px',
-            'text-valign': 'center',
-            'text-halign': 'center',
-            'width': '50px',
-            'height': '50px',
-            'border-width': '2px',
-            'border-color': '#1E2A3A'
-          }
-        },
-        {
-          selector: 'node[type="person"]',
-          style: {
-            'background-color': '#7C3AED',
-            'shape': 'ellipse'
-          }
-        },
-        {
-          selector: 'node[type="organization"]',
-          style: {
-            'background-color': '#2563EB',
-            'shape': 'round-rectangle'
-          }
-        },
-        {
-          selector: 'edge',
-          style: {
-            'width': 2,
-            'line-color': '#475569',
-            'target-arrow-color': '#475569',
-            'target-arrow-shape': 'triangle',
-            'curve-style': 'bezier',
-            'label': 'data(label)',
-            'font-size': '8px',
-            'color': '#94A3B8',
-            'text-rotation': 'autorotate'
-          }
-        }
-      ],
-      layout: {
-        name: 'cose',
-        animate: false
-      } as any
-    });
-
-    cy.on('tap', 'node', (evt) => {
-      const node = evt.target;
-      const entityId = node.id();
-      setSelectedEntityId(entityId);
-      const fullEntity = graph.nodes.find(e => e.id === entityId) ?? null;
-      setActiveDetails(fullEntity);
-    });
-
-    setCyInstance(cy);
-
-    return () => {
-      cy.destroy();
-    };
-  }, [setSelectedEntityId, graph]);
-
-  return (
-    <div className="w-full h-full flex relative bg-[#07090F]">
-      <div className="flex-1 h-full relative" ref={containerRef} />
-
-      {usingFallback && (
-        <div className="absolute top-4 right-4 z-10 px-2 py-1 rounded bg-yellow-500/10 text-yellow-500 border border-yellow-500/20 text-[10px] font-mono">
-          DEMO DATA (API offline / empty)
-        </div>
-      )}
-
-      {/* Graph Floating controls */}
-      <div className="absolute top-4 left-4 flex flex-col gap-2 z-10">
-        <button onClick={() => cyInstance?.zoom(cyInstance.zoom() + 0.1)} className="p-2 bg-gray-900 border border-gray-800 rounded-lg hover:bg-gray-800 text-gray-400 hover:text-white transition-all">
-          <ZoomIn size={16} />
-        </button>
-        <button onClick={() => cyInstance?.zoom(cyInstance.zoom() - 0.1)} className="p-2 bg-gray-900 border border-gray-800 rounded-lg hover:bg-gray-800 text-gray-400 hover:text-white transition-all">
-          <ZoomOut size={16} />
-        </button>
-        <button onClick={() => cyInstance?.fit()} className="p-2 bg-gray-900 border border-gray-800 rounded-lg hover:bg-gray-800 text-gray-400 hover:text-white transition-all">
-          <Maximize2 size={16} />
-        </button>
-      </div>
-
-      {/* Details Side Panel */}
-      {activeDetails && (
-        <div className="w-80 bg-[#0c0e17] border-l border-gray-800/80 p-5 space-y-4 flex flex-col justify-between overflow-y-auto">
-          <div className="space-y-4">
-            <div className="space-y-1">
-              <span className="text-[9px] font-bold font-mono text-cyan-400 uppercase tracking-widest">{activeDetails.type}</span>
-              <h4 className="text-sm font-bold font-mono text-white leading-snug">{activeDetails.name}</h4>
-              <span className={`inline-flex items-center gap-1 text-[9px] font-bold font-mono uppercase text-yellow-500`}>
-                <ShieldAlert size={10} />
-                <span>{activeDetails.classification}</span>
-              </span>
-            </div>
-
-            <div className="space-y-2 text-xxs font-mono bg-gray-950/40 p-4 border border-gray-800/55 rounded-xl">
-              {Object.entries(activeDetails.properties).slice(0, 5).map(([k, v]) => (
-                <div key={k} className="flex justify-between">
-                  <span className="text-gray-500 capitalize">{k.split('_').join(' ')}:</span>
-                  <span className="text-gray-300 font-medium truncate max-w-[130px]">{String(v)}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <Link
-            href={`/entity/${activeDetails.id}`}
-            className="w-full text-center py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl text-xs font-bold font-mono transition-all block"
-          >
-            Open Profile
-          </Link>
-        </div>
-      )}
-    </div>
-  );
+import {Search,ZoomIn,ZoomOut,Maximize2,SlidersHorizontal,Route,Download,X,Pin,PinOff,EyeOff,Undo2,Focus,Play} from 'lucide-react';
+import {graphNeighborhood,mergeNeighborhood} from '../../lib/neighborhood';
+import {useT} from '../../lib/i18n';
+import {fetchGraph} from '../../lib/api';
+import {useAuthStore} from '../../store/authStore';
+import {useThemeStore} from '../../store/themeStore';
+import {useWorkspaceStore} from '../../store/workspaceStore';
+import {triggerDownload} from '../../lib/download';
+import GraphTimeControl from './GraphTimeControl';
+import DataBoundary from '../common/DataBoundary';
+import {useGraphCopy} from './GraphCopy';
+import {graphDates,defaultGraphSettings,graphColors,graphMetrics,shortestPath,commonNeighbors,visibleGraph,type GraphSettings,type GraphCanvasFilters,type GraphPath,type GraphLayout} from './graphModel';
+export type {GraphCanvasFilters} from './graphModel';
+type Positions=Record<string,{x:number;y:number}>;
+type Overview={nodes:{x:number;y:number;color:string}[];extent:{x1:number;y1:number;x2:number;y2:number}};
+export default function CytoscapeGraph({caseId,initialPositions={},initialSettings,filters={},onPositionsChange,onSettingsChange}:{caseId?:string;initialPositions?:Positions;initialSettings?:Partial<GraphSettings>;filters?:GraphCanvasFilters;onPositionsChange?:(p:Positions)=>void;onSettingsChange?:(s:GraphSettings)=>void}){
+ const t=useT(),qc=useQueryClient();const pagesRef=useRef<Record<string,{cursor:string;done:boolean}>>({});
+ const copy=useGraphCopy(),user=useAuthStore(s=>s.user),theme=useThemeStore(s=>s.theme),setSelectedEntityId=useWorkspaceStore(s=>s.setSelectedEntityId);
+ const container=useRef<HTMLDivElement>(null),core=useRef<cytoscape.Core|null>(null),layout=useRef<cytoscape.Layouts|null>(null),layoutGeneration=useRef(0),timers=useRef<ReturnType<typeof setTimeout>[]>([]),positionsRef=useRef(initialPositions),callbacks=useRef({onPositionsChange,onSettingsChange});callbacks.current={onPositionsChange,onSettingsChange};
+ const [settings,setSettings]=useState<GraphSettings>(()=>({...defaultGraphSettings,...initialSettings,pinned:initialSettings?.pinned||[],hidden:initialSettings?.hidden||[]})),[selected,setSelected]=useState(initialSettings?.focusNode||''),[edgeId,setEdgeId]=useState(''),[search,setSearch]=useState(''),[tool,setTool]=useState<'filters'|'path'|null>(null),[reduced,setReduced]=useState(false),[busy,setBusy]=useState(false),[zoom,setZoom]=useState(100),[overview,setOverview]=useState<Overview|null>(null),[from,setFrom]=useState(''),[to,setTo]=useState(''),[directed,setDirected]=useState(false),[path,setPath]=useState<GraphPath|null>(null),[searched,setSearched]=useState(false),[shared,setShared]=useState<string[]|null>(null);
+ const asOf=settings.asOf||'',includeUndated=settings.includeUndated!==false;
+ const setAsOf=useCallback((asOf:string)=>setSettings(s=>({...s,asOf})),[]),setIncludeUndated=useCallback((includeUndated:boolean)=>setSettings(s=>({...s,includeUndated})),[]);
+ const hiddenHistory=useRef<string[]>([]),settingsRef=useRef(settings);settingsRef.current=settings;
+ useEffect(()=>{pagesRef.current={};},[caseId,user?.id]);
+ const query=useQuery({queryKey:['graph-canvas',caseId,user?.id],queryFn:()=>fetchGraph(caseId?500:40,caseId),retry:false});
+ const expand=useMutation({mutationFn:(node:string)=>graphNeighborhood(caseId!,node,pagesRef.current[node]?.cursor||''),onSuccess:(extra,node)=>{pagesRef.current[node]={cursor:extra.next_cursor,done:!extra.has_more};qc.setQueryData(['graph-canvas',caseId,user?.id],(base:import('./graphModel').GraphData|undefined)=>mergeNeighborhood(base||{nodes:[],edges:[]},extra));}});
+ const graph=query.data;const dataRef=useRef(graph);dataRef.current=graph;
+ const view=useMemo(()=>visibleGraph(graph||{nodes:[],edges:[]},settings,{...filters,asOf,includeUndated},settings.focus?selected:''),[graph,settings.hidden,settings.minConfidence,settings.includeUnrated,settings.focus,filters.entityTypes,filters.validFrom,filters.validTo,asOf,includeUndated,settings.focus?selected:'']);
+ const dates=useMemo(()=>graphDates(graph||{nodes:[],edges:[]}),[graph]);
+ const metrics=useMemo(()=>graphMetrics(view),[view]);
+ const motion=useRef(true);motion.current=settings.animations&&!reduced;
+ const stopPath=useCallback(()=>{timers.current.forEach(clearTimeout);timers.current=[];core.current?.elements().removeClass('path path-muted trace');},[]);
+ const emitPositions=useCallback(()=>{const cy=core.current;if(!cy)return;const p:Positions={};cy.nodes().forEach(n=>{p[n.id()]={...n.position()};});callbacks.current.onPositionsChange?.(p);},[]);
+ const fit=useCallback(()=>{const cy=core.current;if(!cy)return;const eles=cy.elements(':visible');if(!eles.length)return;cy.stop();if(motion.current)cy.animate({fit:{eles,padding:64},duration:350});else cy.fit(eles,64);},[]);
+ const arrange=useCallback((name:GraphLayout)=>{const cy=core.current;if(!cy)return;const generation=++layoutGeneration.current;layout.current?.stop();stopPath();const eles=cy.elements(':visible');if(!eles.length){setBusy(false);return;}setBusy(true);const options={name,animate:motion.current&&eles.nodes().length<200?(name==='cose'?'end':true):false,animateFilter:(n:cytoscape.NodeSingular)=>!n.locked(),animationDuration:450,fit:false,padding:64,randomize:false,nodeRepulsion:8000,idealEdgeLength:110,gravity:0.15,componentSpacing:140,spacingFactor:name==='concentric'?1.3:1,concentric:(n:cytoscape.NodeSingular)=>n.degree(),levelWidth:()=>2,directed:true} as cytoscape.LayoutOptions;const run=eles.layout(options);layout.current=run;run.one('layoutstop',()=>{if(generation!==layoutGeneration.current||cy.destroyed())return;layout.current=null;setBusy(false);emitPositions();fit();});run.run();},[emitPositions,fit,stopPath]);
+ const choose=useCallback((id:string,center=false)=>{const cy=core.current;setSelected(id);setSettings(s=>({...s,focusNode:id}));setEdgeId('');setSelectedEntityId(id||null);if(!id||!cy||!center)return;const n=cy.getElementById(id);if(n.empty())return;cy.stop();if(motion.current)cy.animate({center:{eles:n},zoom:Math.max(cy.zoom(),1),duration:350});else{cy.center(n);cy.zoom(Math.max(cy.zoom(),1));}},[setSelectedEntityId]);
+ const selectRef=useRef(choose);selectRef.current=choose;
+ useEffect(()=>{const media=window.matchMedia('(prefers-reduced-motion: reduce)');const update=()=>setReduced(media.matches);update();media.addEventListener('change',update);return()=>media.removeEventListener('change',update);},[]);
+ useEffect(()=>{callbacks.current.onSettingsChange?.(settings);},[settings]);
+ useEffect(()=>{if(!container.current)return;const cy=cytoscape({container:container.current,elements:[],layout:{name:'preset'},minZoom:0.08,maxZoom:3.5});core.current=cy;initialized.current=false;let pending:ReturnType<typeof setTimeout>|undefined;
+ const update=()=>{if(pending)return;pending=setTimeout(()=>{pending=undefined;if(cy.destroyed())return;setZoom(Math.round(cy.zoom()*100));setOverview({nodes:cy.nodes(':visible').map(n=>({...n.position(),color:n.data('color')})),extent:cy.extent()});},100);};
+ cy.on('tap','node',e=>selectRef.current(e.target.id()));cy.on('tap','edge',e=>{setSelected('');setEdgeId(e.target.id());});cy.on('tap',e=>{if(e.target===cy){selectRef.current('');setEdgeId('');}});cy.on('dragfree','node',emitPositions);cy.on('viewport position add remove layoutstop',update);
+ let lastWidth=0,lastHeight=0;const observer=new ResizeObserver(()=>{const w=container.current?.clientWidth||0,h=container.current?.clientHeight||0;cy.resize();if(lastWidth&&lastHeight&&(Math.abs(w-lastWidth)>lastWidth*.15||Math.abs(h-lastHeight)>lastHeight*.25))fit();lastWidth=w;lastHeight=h;update();});observer.observe(container.current);return()=>{observer.disconnect();if(pending)clearTimeout(pending);stopPath();layoutGeneration.current++;layout.current?.stop();cy.destroy();core.current=null;};},[caseId,emitPositions,stopPath,fit]);
+ useEffect(()=>{const cy=core.current;if(!cy)return;const css=getComputedStyle(document.documentElement),text=css.getPropertyValue('--text-primary').trim()||(theme==='dark'?'#e2e8f0':'#1e293b'),bg=css.getPropertyValue('--bg-main').trim()||(theme==='dark'?'#101722':'#f8fafc');
+ cy.style().fromJson([{selector:'node',style:{'background-color':'data(color)',label:settings.labels?'data(label)':'','color':text,'font-family':'Inter, sans-serif','font-size':11,'text-valign':'bottom','text-margin-y':8,'text-background-color':bg,'text-background-opacity':0.85,'text-background-padding':'3px','text-wrap':'ellipsis','text-max-width':'150px',width:'mapData(degree, 0, 15, 34, 66)',height:'mapData(degree, 0, 15, 34, 66)','border-width':2,'border-color':bg}},{selector:'node[type="organization"]',style:{shape:'round-rectangle'}},{selector:'node[type="location"]',style:{shape:'diamond'}},{selector:'node[type="phone"]',style:{shape:'hexagon'}},{selector:'node[type="document"]',style:{shape:'rectangle'}},{selector:'edge',style:{width:1.7,'line-color':'#8190a4','target-arrow-color':'#8190a4','target-arrow-shape':'triangle','arrow-scale':0.75,'curve-style':'bezier',opacity:0.72,label:settings.edgeLabels?'data(label)':'','font-size':9,color:text,'text-rotation':'autorotate','text-background-color':bg,'text-background-opacity':0.9,'text-background-padding':'3px'}},{selector:'.filtered',style:{display:'none'}},{selector:'.pinned',style:{'border-width':4,'border-color':'#f59e0b'}},{selector:'.muted, .path-muted',style:{opacity:0.14}},{selector:'node.active',style:{'border-color':'#f59e0b','border-width':5}},{selector:'edge.active, edge.path',style:{'line-color':'#f59e0b','target-arrow-color':'#f59e0b',width:4,opacity:1}},{selector:'node.path',style:{'border-color':'#f59e0b','border-width':5,opacity:1}},{selector:'node.trace',style:{'border-color':'#fde68a','border-width':8,opacity:1}}] as cytoscape.StylesheetJson).update();},[caseId,theme,settings.labels,settings.edgeLabels]);
+ const initialized=useRef(false);
+ useEffect(()=>{const cy=core.current;if(!cy||!graph)return;const ids=new Set([...graph.nodes,...graph.edges].map(n=>n.id));cy.batch(()=>{cy.elements().forEach(e=>{if(!ids.has(e.id()))e.remove();});graph.nodes.forEach((n,i)=>{const d={id:n.id,label:n.name,type:n.type,color:graphColors[n.type]||'#64748b',degree:0};const old=cy.getElementById(n.id);if(old.length)old.data(d);else cy.add({group:'nodes',data:d,position:positionsRef.current[n.id]||{x:(i%12)*110,y:Math.floor(i/12)*110}});});graph.edges.forEach(e=>{const d={id:e.id,source:e.source,target:e.target,label:e.label};if(!cy.getElementById(e.source).length||!cy.getElementById(e.target).length)return;const old=cy.getElementById(e.id);if(old.length)old.data(d);else cy.add({group:'edges',data:d});});});if(!initialized.current&&graph.nodes.length){initialized.current=true;if(graph.nodes.every(n=>positionsRef.current[n.id])){emitPositions();fit();}else arrange(settingsRef.current.layout);}},[caseId,graph,arrange,emitPositions,fit]);
+ useEffect(()=>{const cy=core.current;if(!cy)return;stopPath();setPath(null);setSearched(false);setShared(null);const nodes=new Set(view.nodes.map(n=>n.id)),edges=new Set(view.edges.map(e=>e.id)),pinnedIDs=new Set(settings.pinned);cy.batch(()=>{cy.nodes().forEach(n=>{n.toggleClass('filtered',!nodes.has(n.id()));n.data('degree',Math.min(15,metrics.degree[n.id()]||0));const pinned=pinnedIDs.has(n.id());n.toggleClass('pinned',pinned);if(pinned)n.lock();else n.unlock();});cy.edges().forEach(e=>{e.toggleClass('filtered',!edges.has(e.id()));});});},[view,metrics,settings.pinned,stopPath]);
+ useEffect(()=>{const cy=core.current;if(!cy)return;cy.elements().removeClass('active muted');if(selected){const n=cy.getElementById(selected),neighborhood=n.closedNeighborhood();cy.elements(':visible').difference(neighborhood).addClass('muted');neighborhood.addClass('active');}else if(edgeId)cy.getElementById(edgeId).addClass('active');},[selected,edgeId,view]);
+ const replay=(p:GraphPath)=>{const cy=core.current;if(!cy)return;stopPath();cy.elements().removeClass('active muted');cy.elements(':visible').addClass('path-muted');const show=(i:number)=>{cy.nodes().removeClass('trace');cy.getElementById(p.nodes[i]).removeClass('path-muted').addClass('path trace');if(i>0)cy.getElementById(p.edges[i-1]).removeClass('path-muted').addClass('path');};if(motion.current)p.nodes.forEach((_,i)=>{timers.current.push(setTimeout(()=>show(i),i*220));});else p.nodes.forEach((_,i)=>show(i));let eles=cy.collection();p.nodes.concat(p.edges).forEach(id=>{eles=eles.union(cy.getElementById(id));});if(motion.current)cy.animate({fit:{eles,padding:90},duration:350});else cy.fit(eles,90);};
+ const details=graph?.nodes.find(n=>n.id===selected),relationship=graph?.edges.find(e=>e.id===edgeId),results=search.trim()?view.nodes.filter(n=>`${n.name} ${n.type} ${n.id}`.toLocaleLowerCase().includes(search.toLocaleLowerCase())).slice(0,8):[];
+ const patch=(p:Partial<GraphSettings>)=>setSettings(s=>({...s,...p}));
+ const togglePin=()=>{if(selected)patch({pinned:settings.pinned.includes(selected)?settings.pinned.filter(id=>id!==selected):[...settings.pinned,selected]});};
+ const hide=()=>{if(!selected)return;hiddenHistory.current.push(selected);patch({hidden:[...settings.hidden,selected],focus:false});choose('');};
+ const undo=()=>{const id=hiddenHistory.current.pop();if(id)patch({hidden:settings.hidden.filter(n=>n!==id)});};
+ const exportPNG=()=>{const cy=core.current;if(!cy)return;const a=document.createElement('a');a.href=cy.png({full:false,scale:2,bg:getComputedStyle(document.documentElement).getPropertyValue('--bg-main').trim()});a.download=`graph-${caseId||'overview'}.png`;a.click();};
+ const exportJSON=()=>{const p:Positions={};core.current?.nodes(':visible').forEach(n=>{p[n.id()]={...n.position()};});triggerDownload(new Blob([JSON.stringify({case_id:caseId,generated_at:new Date().toISOString(),...view,truncated:graph?.truncated,total_nodes:graph?.total_nodes,positions:p,settings,filters:{...filters,asOf,includeUndated}},null,2)],{type:'application/json'}),`graph-${caseId||'overview'}.json`);};
+ const reset=()=>patch({minConfidence:0,includeUnrated:true,hidden:[],focus:false});
+ const types=Array.from(new Set(view.nodes.map(n=>n.type))).sort();
+ return <div className="graph-shell"><GraphTimeControl dates={dates} date={asOf} undated={includeUndated} onChange={setAsOf} onUndated={setIncludeUndated}/><div className="graph-toolbar"><div className="graph-search"><Search size={15}/><input aria-label={copy.search} placeholder={copy.search} value={search} onChange={e=>setSearch(e.target.value)}/>{search&&<button aria-label={copy.close} onClick={()=>setSearch('')}><X size={14}/></button>}{search&&<div className="graph-search-results">{results.map(n=><button key={n.id} onClick={()=>{choose(n.id,true);setSearch('');}}><i style={{background:graphColors[n.type]}}/><span>{n.name}<small>{n.type}</small></span></button>)}{!results.length&&<p>{copy.empty}</p>}</div>}</div><select aria-label={copy.layout} value={settings.layout} onChange={e=>patch({layout:e.target.value as GraphLayout})}>{(['cose','concentric','breadthfirst','circle','grid'] as const).map(n=><option key={n} value={n}>{copy[n]}</option>)}</select><button disabled={busy||!view.nodes.length} onClick={()=>arrange(settings.layout)}>{copy.run}</button><button aria-pressed={tool==='filters'} onClick={()=>setTool(tool==='filters'?null:'filters')}><SlidersHorizontal size={15}/><span>{copy.filters}</span></button><button aria-pressed={tool==='path'} onClick={()=>setTool(tool==='path'?null:'path')}><Route size={15}/><span>{copy.path}</span></button><details className="graph-export"><summary aria-label={copy.json}><Download size={15}/></summary><div><button onClick={exportPNG}>{copy.png}</button><button onClick={exportJSON}>{copy.json}</button></div></details></div>
+ <div className="graph-stage"><div className="graph-canvas" ref={container} data-testid="graph-canvas" role="img" aria-label={`${view.nodes.length} ${copy.nodes}, ${view.edges.length} ${copy.edges}`}/>{(query.isPending||query.isError)&&<div className="graph-boundary"><DataBoundary queries={[query]}/></div>}{query.isSuccess&&!view.nodes.length&&<div className="graph-empty"><p>{copy.empty}</p><button onClick={reset}>{copy.reset}</button></div>}
+ <div className="graph-controls"><button aria-label={copy.zoomIn} title={copy.zoomIn} onClick={()=>{const cy=core.current;if(cy)cy.zoom({level:cy.zoom()*1.2,renderedPosition:{x:cy.width()/2,y:cy.height()/2}});}}><ZoomIn size={17}/></button><span>{zoom}%</span><button aria-label={copy.zoomOut} title={copy.zoomOut} onClick={()=>{const cy=core.current;if(cy)cy.zoom({level:cy.zoom()/1.2,renderedPosition:{x:cy.width()/2,y:cy.height()/2}});}}><ZoomOut size={17}/></button><button aria-label={copy.fit} title={copy.fit} onClick={fit}><Maximize2 size={17}/></button>{settings.focus&&<button title={copy.restore} aria-label={copy.restore} onClick={()=>patch({focus:false})}><Focus size={17}/></button>}{settings.hidden.length>0&&<button aria-label={copy.undo} title={copy.undo} disabled={!hiddenHistory.current.length} onClick={undo}><Undo2 size={17}/></button>}</div>
+ {(graph?.truncated||busy||(filters.validFrom&&filters.validTo&&filters.validFrom>filters.validTo))&&<p role="status" className="graph-notice">{busy?copy.arranging:filters.validFrom&&filters.validTo&&filters.validFrom>filters.validTo?copy.dateError:copy.partial}</p>}
+ {tool&&<aside className="graph-tools"><header><h3>{tool==='filters'?copy.filters:copy.path}</h3><button aria-label={copy.close} onClick={()=>setTool(null)}><X size={16}/></button></header>{tool==='filters'?<><label><input type="checkbox" checked={settings.labels} onChange={e=>patch({labels:e.target.checked})}/>{copy.labels}</label><label><input type="checkbox" checked={settings.edgeLabels} onChange={e=>patch({edgeLabels:e.target.checked})}/>{copy.edgeLabels}</label><label><input type="checkbox" disabled={reduced} checked={settings.animations&&!reduced} onChange={e=>patch({animations:e.target.checked})}/>{copy.animations}</label>{reduced&&<p className="graph-subtle">{copy.reduced}</p>}<label className="graph-field">{copy.confidence}: {Math.round(settings.minConfidence*100)}%<input aria-label={copy.confidence} type="range" min={0} max={1} step={0.05} value={settings.minConfidence} onChange={e=>patch({minConfidence:Number(e.target.value)})}/></label><label><input type="checkbox" checked={settings.includeUnrated} onChange={e=>patch({includeUnrated:e.target.checked})}/>{copy.unrated}</label><button onClick={reset}>{copy.reset}</button></>:<><p className="graph-subtle">{copy.pathNote}</p><label className="graph-field">{copy.from}<select aria-label={copy.from} value={from} onChange={e=>setFrom(e.target.value)}><option value="">—</option>{view.nodes.map(n=><option key={n.id} value={n.id}>{n.name}</option>)}</select></label><label className="graph-field">{copy.to}<select aria-label={copy.to} value={to} onChange={e=>setTo(e.target.value)}><option value="">—</option>{view.nodes.map(n=><option key={n.id} value={n.id}>{n.name}</option>)}</select></label><label><input type="checkbox" checked={directed} onChange={e=>setDirected(e.target.checked)}/>{copy.directed}</label><button disabled={!from||!to} onClick={()=>{const p=shortestPath(view,from,to,directed);setPath(p);setSearched(true);setShared(null);stopPath();if(p)replay(p);}}>{copy.find}</button><button disabled={!from||!to} onClick={()=>{const ids=commonNeighbors(view,from,to,directed);setShared(ids);setPath(null);setSearched(false);stopPath();const cy=core.current;if(cy){cy.elements().removeClass('active muted');let eles=cy.collection();[from,to,...ids].forEach(id=>{eles=eles.union(cy.getElementById(id));});eles.addClass('active');cy.elements(':visible').difference(eles).addClass('muted');cy.fit(eles,90);}}}>{copy.neighbors}</button>{shared&&<div><p>{shared.length} {copy.neighbors}</p>{shared.map(id=><button key={id} onClick={()=>choose(id,true)}>{graph?.nodes.find(n=>n.id===id)?.name}</button>)}</div>}{searched&&!path&&<p role="status">{copy.noPath}</p>}{path&&<><p>{path.edges.length} {copy.hops}</p><ol className="graph-path-list">{path.nodes.map(id=><li key={id}><button onClick={()=>choose(id,true)}>{graph?.nodes.find(n=>n.id===id)?.name}</button></li>)}</ol><button onClick={()=>replay(path)}><Play size={14}/>{copy.replay}</button></>}</>}</aside>}
+ {(details||relationship)&&<aside className="graph-inspector"><header><span>{details?.type||relationship?.type}</span><button aria-label={copy.close} onClick={()=>{choose('');setEdgeId('');}}><X size={16}/></button></header><h3>{details?.name||relationship?.label}</h3>{details?<><span className="graph-classification">{details.classification}</span><p className="graph-subtle">{metrics.degree[details.id]||0} {copy.degree}</p><div className="graph-actions"><button onClick={()=>patch({focus:!settings.focus})}><Focus size={14}/>{settings.focus?copy.restore:copy.focus}</button><button onClick={togglePin}>{settings.pinned.includes(selected)?<PinOff size={14}/>:<Pin size={14}/>} {settings.pinned.includes(selected)?copy.unpin:copy.pin}</button><button onClick={hide}><EyeOff size={14}/>{copy.hide}</button></div><>{caseId&&<div className="graph-actions"><button disabled={expand.isPending||!!pagesRef.current[selected]?.done||(graph?.nodes.length??0)>=2000} onClick={()=>expand.mutate(selected)}>{t("pro_expand_graph")}</button>{expand.isError&&<p role="alert">{t("common_load_error")}</p>}<small>{t("pro_graph_limit")}</small></div>}</><dl>{Object.entries(details.properties||{}).slice(0,12).map(([k,v])=><div key={k}><dt>{k.replaceAll('_',' ')}</dt><dd>{String(v)}</dd></div>)}</dl><Link className="graph-profile" href={`/entity/${details.id}`}>{copy.profile}</Link></>:relationship&&<dl><div><dt>{copy.source}</dt><dd>{relationship.evidence_source||copy.missing}</dd></div><div><dt>{copy.confidence}</dt><dd>{typeof relationship.confidence==='number'?`${Math.round(relationship.confidence*100)}%`:copy.missing}</dd></div>{(relationship.valid_from||relationship.valid_to)&&<div><dt>{relationship.valid_from||'…'} — {relationship.valid_to||'…'}</dt></div>}{!!relationship.evidence_ids?.length&&<div><dt>{copy.evidenceIDs}</dt><dd>{relationship.evidence_ids.join(', ')}</dd></div>}</dl>}</aside>}
+ <div className="graph-legend" aria-label={copy.legend}>{types.map(type=><span key={type}><i style={{background:graphColors[type]||'#64748b'}}/>{type}</span>)}</div>{overview?.nodes.length&&!details&&!relationship?<MiniMap value={overview} label={copy.overview} onCenter={(x,y)=>{const cy=core.current;if(cy)cy.pan({x:cy.width()/2-x*cy.zoom(),y:cy.height()/2-y*cy.zoom()});}}/>:null}
+ </div><footer className="graph-footer"><span><b>{view.nodes.length}</b> {copy.nodes}</span><span><b>{view.edges.length}</b> {copy.edges}</span><span>{metrics.components} {copy.components}</span><span>{metrics.isolated} {copy.isolated}</span>{settings.pinned.length>0&&<span>{settings.pinned.length} {copy.pinned}</span>}<small>{copy.help}</small></footer></div>;
 }
+function MiniMap({value,label,onCenter}:{value:Overview;label:string;onCenter:(x:number,y:number)=>void}){const xs=value.nodes.map(n=>n.x),ys=value.nodes.map(n=>n.y),minX=Math.min(...xs)-60,minY=Math.min(...ys)-60,w=Math.max(...xs)-minX+60,h=Math.max(...ys)-minY+60,scale=Math.min(156/w,104/h),ox=(156-w*scale)/2,oy=(104-h*scale)/2;return <button className="graph-minimap" aria-label={label} onClick={e=>{const r=e.currentTarget.getBoundingClientRect();onCenter((e.clientX-r.left-ox)/scale+minX,(e.clientY-r.top-oy)/scale+minY);}}><svg viewBox="0 0 156 104" aria-hidden="true">{value.nodes.map((n,i)=><circle key={i} cx={(n.x-minX)*scale+ox} cy={(n.y-minY)*scale+oy} r={2.3} fill={n.color}/>)}<rect x={(value.extent.x1-minX)*scale+ox} y={(value.extent.y1-minY)*scale+oy} width={(value.extent.x2-value.extent.x1)*scale} height={(value.extent.y2-value.extent.y1)*scale} fill="none" stroke="var(--accent-cyan)" strokeWidth="1.5"/></svg><span>{label}</span></button>;}

@@ -20,7 +20,8 @@ particular endpoint is unreachable.
 - **axios** for HTTP, with a shared client (`src/lib/apiClient.ts`) that
   attaches the bearer token and silently refreshes it on `401`
 - **Cytoscape.js** for the link-analysis graph
-- **react-leaflet** (Leaflet + CartoDB dark tiles) for the geospatial map
+- **Yandex Maps JS API 2.1** when configured, with a professional Leaflet/
+  OpenStreetMap fallback for the geospatial map
 - **Recharts** for charts
 
 ## Prerequisites
@@ -91,7 +92,7 @@ English.
 | `/search`            | Global entity search & filters                                 |
 | `/entity/[id]`       | 360° entity dossier — attributes, sightings, connections, timeline, edit/delete |
 | `/graph/[caseId]`    | Cytoscape link-analysis graph, with a case-entities side panel  |
-| `/map`               | Geospatial map (Leaflet) with sensor layer                     |
+| `/map`               | Multi-provider geospatial map, live detections, sensor coverage, search, GPS, measurement and replay |
 | `/surveillance`      | Live sensor feed (WebSocket, `LIVE` badge, auto-reconnect)      |
 | `/command`           | Military Command Post (COP) tactical map                       |
 | `/timeline`          | Cross-entity event timeline                                    |
@@ -105,6 +106,17 @@ English.
 |---|---|---|
 | `BACKEND_URL` | `http://localhost:8080` | Server-side only — where `/api/*` is proxied to. |
 | `NEXT_PUBLIC_API_URL` | *(empty)* | Override only if calling the backend directly (bypassing the proxy); leave unset for the normal same-origin setup. |
+| `NEXT_PUBLIC_YANDEX_MAPS_API_KEY` | *(empty)* | Enables Yandex Maps on `/map`; without it the OpenStreetMap provider is used. Restrict this browser-visible key by HTTP Referer in the Yandex developer console. |
+
+The Yandex provider includes address search, clustering, traffic, map/satellite/
+hybrid types, geolocation, fullscreen mode and a ruler. The provider selector
+falls back to OpenStreetMap automatically if the key is absent or Yandex fails
+to initialize. OpenStreetMap mode includes street, dark and topographic layers.
+Both providers show platform entities, sensor coverage, WebSocket detections,
+GPS position, click coordinates and two-point distance measurement. Analysts
+can also draw a geofence to calculate its area and count contained map objects,
+run a configurable 500 m–25 km radius search, and export the currently visible
+operational layers and analysis shapes as GeoJSON.
 
 ## Docker
 

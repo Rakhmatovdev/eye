@@ -7,16 +7,23 @@ test('entity dossier renders attributes, sightings, and connections', async ({ p
   // Identity header.
   await expect(page.locator('h1')).toContainText(/.+/, { timeout: 30_000 });
 
-  // Section headers (Attributes, Sightings, Connections, Timeline) share a
-  // stable class regardless of locale copy — assert all four rendered.
+  // Section headers (Attributes, Sightings, Connections, Timeline,
+  // Attachments) share a stable class regardless of locale copy — assert
+  // all five rendered.
   const sectionHeaders = page.locator('h2.uppercase.tracking-wider');
-  await expect(sectionHeaders).toHaveCount(4);
+  await expect(sectionHeaders).toHaveCount(5);
   for (const header of await sectionHeaders.all()) {
     await expect(header).toBeVisible();
   }
 
   // Attributes section: at least one key/value row from entity.properties.
-  await expect(page.locator('span.text-gray-300').first()).toBeVisible();
+  // A data-testid, not a Tailwind color class — the class was
+  // `text-gray-300` before the dark/light theme migration replaced every
+  // hardcoded color with a CSS-variable class (`text-[var(--chrome-text-300)]`),
+  // which silently broke this exact locator (the test failed to find any
+  // match rather than erroring, so it went unnoticed until this spec was
+  // actually run against current `frontend/src`).
+  await expect(page.getByTestId('entity-attr-value').first()).toBeVisible();
 
   await page.screenshot({ path: 'test-results/screens/entity-dossier.png', fullPage: true });
 });

@@ -7,15 +7,25 @@ import { authApi, mfaApi } from '../../../lib/api';
 import { useAuthStore } from '../../../store/authStore';
 import { translate } from '../../../lib/i18n';
 
+jest.mock('../../../lib/workspaceApi', () => ({
+  workspaceApi: { notifications: jest.fn().mockResolvedValue([]) },
+}));
+
 jest.mock('../../../lib/api', () => ({
   authApi: {
     me: jest.fn(),
     changePassword: jest.fn(),
+    logout: jest.fn().mockResolvedValue(undefined),
   },
   mfaApi: {
     enroll: jest.fn(),
     verify: jest.fn(),
     disable: jest.fn(),
+  },
+  sessionsApi: {
+    list: jest.fn().mockResolvedValue([]),
+    revoke: jest.fn(),
+    revokeOthers: jest.fn(),
   },
 }));
 
@@ -40,15 +50,8 @@ function renderSettings() {
   );
 }
 
-// The change-password fields use a bare <label> that isn't programmatically
-// associated with its <input> (no htmlFor/id) — it's just a sibling in the
-// same wrapping <div>. `getByLabelText` can't resolve that, so look up the
-// label by its text and grab the <input> next to it instead.
 function inputNearLabel(labelText: string): HTMLInputElement {
-  const label = screen.getByText(labelText);
-  const input = label.parentElement?.querySelector('input');
-  if (!input) throw new Error(`No <input> found next to label "${labelText}"`);
-  return input as HTMLInputElement;
+  return screen.getByLabelText(labelText) as HTMLInputElement;
 }
 
 describe('SettingsPage — change password form', () => {
@@ -57,7 +60,7 @@ describe('SettingsPage — change password form', () => {
     mockedChangePassword.mockReset();
     (mfaApi.enroll as jest.Mock).mockReset();
     mockedMe.mockResolvedValue(currentUser);
-    useAuthStore.getState().login(currentUser, 'access-1', 'refresh-1');
+    useAuthStore.getState().login(currentUser);
   });
 
   afterEach(() => {

@@ -1,4 +1,4 @@
-import { MapPin, Network, Radar, TrendingUp, Sparkles } from 'lucide-react';
+import { MapPin, Network, Radar, TrendingUp, Sigma, Sparkles } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { PatternType } from './api';
 import type { TKey } from './i18n';
@@ -11,6 +11,7 @@ export const PATTERN_TYPE_KEY: Record<PatternType, TKey> = {
   hub_entity: 'patterns_type_hub_entity',
   threat_correlation: 'patterns_type_threat_correlation',
   burst_activity: 'patterns_type_burst_activity',
+  statistical_outlier: 'patterns_type_statistical_outlier',
 };
 
 export const PATTERN_TYPE_ICON: Record<PatternType, LucideIcon> = {
@@ -18,14 +19,15 @@ export const PATTERN_TYPE_ICON: Record<PatternType, LucideIcon> = {
   hub_entity: Network,
   threat_correlation: Radar,
   burst_activity: TrendingUp,
+  statistical_outlier: Sigma,
 };
 
 export const PATTERN_FALLBACK_ICON: LucideIcon = Sparkles;
 
 export function scoreColorClass(score: number): string {
-  if (score >= 75) return 'text-red-400';
-  if (score >= 50) return 'text-amber-400';
-  return 'text-emerald-400';
+  if (score >= 75) return 'text-[var(--accent-red-soft)]';
+  if (score >= 50) return 'text-[var(--accent-amber-soft)]';
+  return 'text-[var(--accent-emerald-soft)]';
 }
 
 export function scoreBarColorClass(score: number): string {

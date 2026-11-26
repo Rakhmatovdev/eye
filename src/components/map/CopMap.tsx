@@ -1,8 +1,8 @@
 'use client';
 import React from 'react';
-import { MapContainer, TileLayer, CircleMarker, Polyline, Popup } from 'react-leaflet';
+import { MapContainer, TileLayer, CircleMarker, Polyline, Polygon, Popup } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
-import type { Unit, Threat } from '../../lib/api';
+import type { Unit, Threat, Sensor } from '../../lib/api';
 
 const THREAT_COLOR: Record<string, string> = {
   hostile: '#ef4444',
@@ -19,7 +19,46 @@ function headingLine(lat: number, lng: number, heading: number): [number, number
   return [[lat, lng], [lat + dLat, lng + dLng]];
 }
 
-export default function CopMap({ units, threats }: { units: Unit[]; threats: Threat[] }) {
+// Calculate camera FOV vision cone polygon points
+function calcVisionCone(lat: number, lng: number, headingDeg = 0, fovDeg = 60, rangeMeters = 400): [number, number][] {
+  const R = 6371000; // meters
+  const startAngle = headingDeg - fovDeg / 2.0;
+  const endAngle = headingDeg + fovDeg / 2.0;
+  const steps = 8;
+  const points: [number, number][] = [[lat, lng]];
+
+  for (let i = 0; i <= steps; i++) {
+    const angle = startAngle + ((endAngle - startAngle) * i) / steps;
+    const radBearing = (angle * Math.PI) / 180;
+    const radLat = (lat * Math.PI) / 180;
+    const radLng = (lng * Math.PI) / 180;
+    const angDist = rangeMeters / R;
+
+    const resLat = Math.asin(
+      Math.sin(radLat) * Math.cos(angDist) +
+      Math.cos(radLat) * Math.sin(angDist) * Math.cos(radBearing)
+    );
+    const resLng = radLng + Math.atan2(
+      Math.sin(radBearing) * Math.sin(angDist) * Math.cos(radLat),
+      Math.cos(angDist) - Math.sin(radLat) * Math.sin(resLat)
+    );
+
+    points.push([(resLat * 180) / Math.PI, (resLng * 180) / Math.PI]);
+  }
+
+  points.push([lat, lng]);
+  return points;
+}
+
+export default function CopMap({
+  units,
+  threats,
+  sensors = [],
+}: {
+  units: Unit[];
+  threats: Threat[];
+  sensors?: Sensor[];
+}) {
   const all = [...units, ...threats];
   const center: [number, number] = all.length
     ? [all.reduce((s, p) => s + p.lat, 0) / all.length, all.reduce((s, p) => s + p.lng, 0) / all.length]
@@ -31,6 +70,55 @@ export default function CopMap({ units, threats }: { units: Unit[]; threats: Thr
         attribution="&copy; OpenStreetMap &copy; CARTO"
         url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
       />
+
+      {/* Surveillance Camera Vision Cones & Fixed Sensors */}
+      {sensors.map((s) => {
+        const cone = calcVisionCone(s.lat, s.lng, s.heading || 0, s.fov || 60, Math.min(s.coverage_radius || 500, 1500));
+        return (
+          <React.Fragment key={s.id}>
+            <Polygon
+              positions={cone}
+              pathOptions={{
+                color: '#06b6d4',
+                fillColor: '#0891b2',
+                fillOpacity: 0.15,
+                weight: 1,
+                dashArray: '3 3',
+              }}
+            />
+            <CircleMarker
+              center={[s.lat, s.lng]}
+              radius={6}
+              pathOptions={{
+                color: '#22d3ee',
+                fillColor: s.status === 'online' ? '#10b981' : '#f59e0b',
+                fillOpacity: 0.9,
+                weight: 1.5,
+              }}
+            >
+              <Popup>
+                <div style={{ fontFamily: 'monospace', minWidth: 200 }}>
+                  <div style={{ fontWeight: 700, color: '#0891b2' }}>{s.name}</div>
+                  <div style={{ fontSize: 11, textTransform: 'uppercase', color: '#64748b' }}>
+                    {s.type} · {s.status} · {s.stream_protocol || 'RTSP'}
+                  </div>
+                  <div style={{ fontSize: 11, color: '#475569' }}>
+                    HDG: {s.heading || 0}° · FOV: {s.fov || 60}° · {s.area}
+                  </div>
+                  <div style={{ marginTop: 6, borderTop: '1px solid #e2e8f0', paddingTop: 4 }}>
+                    <a
+                      href={`/surveillance`}
+                      style={{ fontSize: 11, color: '#0284c7', textDecoration: 'none', fontWeight: 600 }}
+                    >
+                      Jonli oqimni ochish &rarr;
+                    </a>
+                  </div>
+                </div>
+              </Popup>
+            </CircleMarker>
+          </React.Fragment>
+        );
+      })}
 
       {/* Friendly units — cyan */}
       {units.map((u) => (

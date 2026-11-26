@@ -15,6 +15,7 @@ const ROUTES = [
   '/alerts',
   '/watchlist',
   '/patterns',
+  '/settings',
 ];
 
 async function warm(base: string, path: string) {

@@ -1,0 +1,12 @@
+'use client';
+import {useState} from 'react';
+import {useMutation,useQueryClient} from '@tanstack/react-query';
+import {workspaceApi,type GeneratedReportDraft,type ReportVersion} from '../../lib/workspaceApi';
+import {useLocaleStore} from '../../store/localeStore';
+import {apiErrorMessage} from '../../lib/apiClient';
+import {useT} from '../../lib/i18n';
+import Modal from '../common/Modal';
+import {ErrorMessage} from './Shared';
+import {useOperationsCopy} from './OperationsCopy';
+export default function GeneratedReport({caseId,onCreated}:{caseId:string;onCreated:(report:ReportVersion)=>void}){const copy=useOperationsCopy();const t=useT();const locale=useLocaleStore(s=>s.locale);const [draft,setDraft]=useState<GeneratedReportDraft|null>(null);const generate=useMutation({mutationFn:()=>workspaceApi.reportDraft(caseId,locale),onSuccess:setDraft});return <><button className="dashboard-secondary-button" disabled={generate.isPending} onClick={()=>generate.mutate()}>{generate.isPending?t('common_loading'):copy.draft}</button>{generate.isError&&<ErrorMessage message={apiErrorMessage(generate.error,t('wb_error'))}/>} {draft&&<DraftForm caseId={caseId} draft={draft} onClose={()=>setDraft(null)} onCreated={report=>{setDraft(null);onCreated(report);}}/>}</>;}
+function DraftForm({caseId,draft,onClose,onCreated}:{caseId:string;draft:GeneratedReportDraft;onClose:()=>void;onCreated:(report:ReportVersion)=>void}){const copy=useOperationsCopy();const t=useT();const qc=useQueryClient();const [summary,setSummary]=useState(draft.summary);const save=useMutation({mutationFn:()=>workspaceApi.addReport(caseId,{summary,evidence_ids:draft.evidence_ids}),onSuccess:report=>{void qc.invalidateQueries({queryKey:['case-reports',caseId]});void qc.invalidateQueries({queryKey:['case-diagnostics',caseId]});onCreated(report);}});return <Modal title={copy.draft} onClose={onClose} busy={save.isPending}><form className="wb-form" onSubmit={e=>{e.preventDefault();save.mutate();}}><p className="wb-muted">{copy.draftNote}</p>{draft.truncated&&<p className="wb-danger">{copy.cut}</p>}<p>{t('wb_evidence')}: {draft.evidence_ids.length} · {draft.classification}</p><label>{t('wb_summary')}<textarea required rows={15} maxLength={16000} value={summary} onChange={e=>setSummary(e.target.value)}/></label>{save.isError&&<ErrorMessage message={apiErrorMessage(save.error,t('wb_error'))}/>}<button className="dashboard-primary-button" disabled={save.isPending||!summary.trim()}>{t('wb_new_report')}</button></form></Modal>;}

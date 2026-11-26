@@ -11,7 +11,7 @@ interface WorkspaceState {
 
 export const useWorkspaceStore = create<WorkspaceState>((set) => ({
   selectedEntityId: null,
-  activeCaseId: 'case-01', // Default mock case ID
+  activeCaseId: null,
   searchQuery: '',
   setSelectedEntityId: (id) => set({ selectedEntityId: id }),
   setActiveCaseId: (id) => set({ activeCaseId: id }),

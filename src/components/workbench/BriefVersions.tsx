@@ -1,0 +1,18 @@
+'use client';
+import React,{useState} from 'react';
+import {useQuery} from '@tanstack/react-query';
+import {reviewApi,type BriefVersion} from '../../lib/analyticsReview';
+import {useAuthStore} from '../../store/authStore';
+import {QueryState,DateLabel} from './Shared';
+import {useReviewCopy} from './ReviewCopy';
+import {useBriefCopy} from './BriefCopy';
+import {useRequirementPage} from './RequirementPaging';
+import type {BriefRequirement} from '../../lib/briefAnalytics';
+export default function BriefVersions({caseId,revisionKey}:{caseId:string;revisionKey:string}){
+ const copy=useReviewCopy(),user=useAuthStore(s=>s.user);const [before,setBefore]=useState(''),[after,setAfter]=useState(''),[selection,setSelection]=useState<{before:BriefVersion;after:BriefVersion}|null>(null);
+ const q=useQuery({queryKey:['brief-versions',caseId,user?.id,revisionKey],queryFn:()=>reviewApi.versions(caseId)});const data=q.isError?undefined:q.data;
+ return <section className="brief-source brief-versions"><div className="brief-live-bar"><h3>{copy.versions}</h3><button className="dashboard-text-link" onClick={()=>{setSelection(null);void q.refetch();}} disabled={q.isFetching}>{copy.refresh}</button></div><p>{copy.versionNote}</p><QueryState query={q}/>{data&&<>{data.limited&&<p className="brief-notice">{copy.limited}</p>}{data.versions.length<2?<p>{copy.needTwo}</p>:<form className="wb-form" onSubmit={e=>{e.preventDefault();const b=data.versions.find(v=>v.key===before),a=data.versions.find(v=>v.key===after);if(b&&a&&b.key!==a.key)setSelection({before:b,after:a});}}><div className="wb-form-grid">{([{label:copy.before,value:before,set:setBefore},{label:copy.after,value:after,set:setAfter}]).map(field=><label key={field.label}>{field.label}<select aria-label={field.label} value={field.value} onChange={e=>{field.set(e.target.value);setSelection(null);}} required><option value="">{copy.choose}</option>{data.versions.map(v=><option key={v.key} value={v.key}>{v.plan.title} · v{v.plan.revision} · {v.plan.filename}</option>)}</select></label>)}</div><button className="dashboard-primary-button" disabled={!before||!after||before===after}>{copy.compare}</button></form>}</>}{selection&&<Diff key={`${selection.before.key}-${selection.after.key}`} caseId={caseId} selection={selection}/>}</section>;
+}
+function Diff({caseId,selection}:{caseId:string;selection:{before:BriefVersion;after:BriefVersion}}){const copy=useReviewCopy(),user=useAuthStore(s=>s.user);const q=useQuery({queryKey:['brief-diff',caseId,user?.id,selection.before.key,selection.after.key],queryFn:()=>reviewApi.diff(caseId,selection.before,selection.after)});const data=q.isError?undefined:q.data;const paging=useRequirementPage(data?.changes??[]);return <><QueryState query={q}/>{data&&<><p>{copy.unchanged}: {data.unchanged}</p>{paging.controls}<div className="decision-matrix-list">{paging.items.map((c,i)=><article className="brief-rule" key={i}><h4>{copy.kinds[c.kind as 'added'|'removed'|'changed']}</h4>{c.match==='text_similarity'&&<p className="brief-notice">{copy.similar}</p>}<div className="wb-form-grid">{c.before&&<Requirement label={copy.before} row={c.before}/>} {c.after&&<Requirement label={copy.after} row={c.after}/>}</div></article>)}</div><small><DateLabel value={data.before.plan.updated_at}/> → <DateLabel value={data.after.plan.updated_at}/></small></>}</>;}
+function Requirement({label,row}:{label:string;row:BriefRequirement}){const copy=useReviewCopy(),brief=useBriefCopy();return <section><strong>{label} · {row.id}</strong><p className="wb-prose">{row.text}</p><p>{copy.mapping}: {row.metric?brief.metrics[row.metric]:'—'} {row.target!==undefined?`${row.operator==='gte'?'≥':'≤'} ${row.target}`:''}{row.source_id&&` · ${row.source_id}`}</p></section>;}
+

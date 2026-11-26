@@ -11,41 +11,40 @@ export interface AuthUser {
 
 interface AuthState {
   user: AuthUser | null;
-  token: string | null;
-  refreshToken: string | null;
   isAuthenticated: boolean;
-  login: (user: AuthUser, token: string, refreshToken?: string | null) => void;
+  // True once the app-start session bootstrap (GET /auth/me) has resolved,
+  // one way or the other. Route guards should wait on this before deciding
+  // to redirect to /login, since — unlike the old token-in-localStorage
+  // design — there's no way to know synchronously at store-init time whether
+  // a valid session cookie exists (it's HttpOnly, invisible to JS).
+  hasCheckedSession: boolean;
+  login: (user: AuthUser) => void;
   logout: () => void;
   updateUser: (patch: Partial<AuthUser>) => void;
-  // Swaps in a freshly-minted access token after a silent refresh. The backend
-  // rotates the refresh token on every /auth/refresh, so the new one must be
-  // stored too — the old one is already revoked server-side.
-  setAccessToken: (token: string, refreshToken?: string | null) => void;
 }
 
 const STORAGE_KEY = 'nexus.auth';
 
-function loadInitial(): { user: AuthUser | null; token: string | null; refreshToken: string | null } {
-  if (typeof window === 'undefined') return { user: null, token: null, refreshToken: null };
+// Only ever a display cache (show the cached name/role while the session
+// bootstrap is in flight) — never used to decide isAuthenticated. The
+// backend cookie is the only real source of truth for that now.
+function loadCachedUser(): AuthUser | null {
+  if (typeof window === 'undefined') return null;
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { user: null, token: null, refreshToken: null };
+    if (!raw) return null;
     const parsed = JSON.parse(raw);
-    return {
-      user: parsed.user ?? null,
-      token: parsed.token ?? null,
-      refreshToken: parsed.refreshToken ?? null,
-    };
+    return parsed.user ?? null;
   } catch {
-    return { user: null, token: null, refreshToken: null };
+    return null;
   }
 }
 
-function persist(user: AuthUser | null, token: string | null, refreshToken: string | null) {
+function persistCachedUser(user: AuthUser | null) {
   if (typeof window === 'undefined') return;
   try {
-    if (user && token) {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ user, token, refreshToken }));
+    if (user) {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ user }));
     } else {
       window.localStorage.removeItem(STORAGE_KEY);
     }
@@ -54,20 +53,17 @@ function persist(user: AuthUser | null, token: string | null, refreshToken: stri
   }
 }
 
-const initial = loadInitial();
-
 export const useAuthStore = create<AuthState>((set, get) => ({
-  user: initial.user,
-  token: initial.token,
-  refreshToken: initial.refreshToken,
-  isAuthenticated: !!initial.token,
-  login: (user, token, refreshToken) => {
-    persist(user, token, refreshToken ?? null);
-    set({ user, token, refreshToken: refreshToken ?? null, isAuthenticated: true });
+  user: loadCachedUser(),
+  isAuthenticated: false,
+  hasCheckedSession: false,
+  login: (user) => {
+    persistCachedUser(user);
+    set({ user, isAuthenticated: true, hasCheckedSession: true });
   },
   logout: () => {
-    persist(null, null, null);
-    set({ user: null, token: null, refreshToken: null, isAuthenticated: false });
+    persistCachedUser(null);
+    set({ user: null, isAuthenticated: false, hasCheckedSession: true });
   },
   // Patches the cached user (e.g. after enabling/disabling MFA) without a
   // fresh login round-trip.
@@ -75,12 +71,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const current = get().user;
     if (!current) return;
     const updated = { ...current, ...patch };
-    persist(updated, get().token, get().refreshToken);
+    persistCachedUser(updated);
     set({ user: updated });
-  },
-  setAccessToken: (token, refreshToken) => {
-    const nextRefresh = refreshToken ?? get().refreshToken;
-    persist(get().user, token, nextRefresh);
-    set({ token, refreshToken: nextRefresh });
   },
 }));

@@ -2,18 +2,18 @@ import { scoreColorClass, scoreBarColorClass } from '../patternUi';
 
 describe('scoreColorClass()', () => {
   it('returns red for high scores (>=75)', () => {
-    expect(scoreColorClass(85)).toBe('text-red-400');
-    expect(scoreColorClass(75)).toBe('text-red-400');
+    expect(scoreColorClass(85)).toBe('text-[var(--accent-red-soft)]');
+    expect(scoreColorClass(75)).toBe('text-[var(--accent-red-soft)]');
   });
 
   it('returns amber for medium scores (50-74)', () => {
-    expect(scoreColorClass(64)).toBe('text-amber-400');
-    expect(scoreColorClass(50)).toBe('text-amber-400');
+    expect(scoreColorClass(64)).toBe('text-[var(--accent-amber-soft)]');
+    expect(scoreColorClass(50)).toBe('text-[var(--accent-amber-soft)]');
   });
 
   it('returns emerald for low scores (<50)', () => {
-    expect(scoreColorClass(30)).toBe('text-emerald-400');
-    expect(scoreColorClass(0)).toBe('text-emerald-400');
+    expect(scoreColorClass(30)).toBe('text-[var(--accent-emerald-soft)]');
+    expect(scoreColorClass(0)).toBe('text-[var(--accent-emerald-soft)]');
   });
 });
 

@@ -16,6 +16,7 @@ export const mockAlerts: Alert[] = [
     entity_id: 'ent-009',
     threat_id: 't-001',
     acknowledged: false,
+    state: 'new',
     created_at: ago(1),
   },
   {
@@ -28,6 +29,7 @@ export const mockAlerts: Alert[] = [
     entity_id: 'ent-009',
     detection_id: 'det-007',
     acknowledged: false,
+    state: 'new',
     created_at: ago(3),
   },
   {
@@ -40,6 +42,7 @@ export const mockAlerts: Alert[] = [
     entity_id: 'ent-011',
     detection_id: 'det-002',
     acknowledged: false,
+    state: 'new',
     created_at: ago(5),
   },
   {
@@ -51,6 +54,7 @@ export const mockAlerts: Alert[] = [
     message: 'Zhang Wei has a risk score of 91, at or above the rule threshold of 80.',
     entity_id: 'ent-002',
     acknowledged: false,
+    state: 'new',
     created_at: ago(10),
   },
   {
@@ -62,6 +66,7 @@ export const mockAlerts: Alert[] = [
     message: 'Dragon Capital Investment has a risk score of 89, at or above the rule threshold of 80.',
     entity_id: 'ent-014',
     acknowledged: true,
+    state: 'acknowledged',
     ack_by: 'admin@platform.io',
     ack_at: ago(2),
     created_at: ago(20),
@@ -76,6 +81,7 @@ export const mockAlerts: Alert[] = [
     entity_id: 'ent-009',
     detection_id: 'det-016',
     acknowledged: true,
+    state: 'acknowledged',
     ack_by: 'analyst@platform.io',
     ack_at: ago(4),
     created_at: ago(26),

@@ -1,0 +1,3 @@
+import {render,screen,fireEvent} from '@testing-library/react';
+import VirtualList from '../VirtualList';
+test('large lists render a viewport and overscan instead of all rows',()=>{const items=Array.from({length:1000},(_,i)=>({id:String(i),name:'Row '+i}));render(<VirtualList items={items} itemKey={v=>v.id} render={v=><span>{v.name}</span>} rowHeight={50} height={200} label="Case entities"/>);expect(screen.getAllByRole('listitem').length).toBeLessThan(20);expect(screen.queryByText('Row 500')).not.toBeInTheDocument();fireEvent.scroll(screen.getByRole('list'),{target:{scrollTop:25000}});expect(screen.getByText('Row 500')).toBeInTheDocument();expect(screen.getAllByRole('listitem').length).toBeLessThan(20);});

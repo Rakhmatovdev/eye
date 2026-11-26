@@ -9,6 +9,14 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+# Next.js resolves next.config.js's rewrites() at build time and freezes the
+# result into .next/routes-manifest.json — next start never re-evaluates it,
+# so BACKEND_URL must be present during this build step, not just at container
+# runtime (unlike a typical server-side-only env var).
+ARG BACKEND_URL=http://localhost:8080
+ENV BACKEND_URL=$BACKEND_URL
+ARG NEXT_PUBLIC_YANDEX_MAPS_API_KEY=""
+ENV NEXT_PUBLIC_YANDEX_MAPS_API_KEY=$NEXT_PUBLIC_YANDEX_MAPS_API_KEY
 RUN npm run build
 
 # --- runner: minimal production image ---------------------------------------

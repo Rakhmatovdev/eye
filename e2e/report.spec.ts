@@ -14,6 +14,8 @@ test('entity report modal renders generated markdown and offers download', async
   await expect(modal.locator('h1, h2, h3').first()).toBeVisible({ timeout: 20_000 });
 
   await expect(page.locator('[data-testid="report-download-btn"]')).toBeEnabled();
+  await expect(page.locator('[data-testid="report-download-pdf-btn"]')).toBeEnabled();
+  await expect(page.locator('[data-testid="report-download-csv-btn"]')).toBeEnabled();
 
   await page.screenshot({ path: 'test-results/screens/report-modal.png', fullPage: true });
 });

@@ -1,9 +1,10 @@
 import React from 'react';
 import './globals.css';
+import 'leaflet/dist/leaflet.css';
 import Providers from './providers';
 
 export const metadata = {
-  title: 'Brave Analyst Workspace',
+  title: 'Ko‘z · Intelligence Workspace',
   description: 'Intelligence link analysis, geospatial operations, and investigation workflow canvas.',
 };
 
@@ -13,11 +14,16 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
+    <html lang="uz" suppressHydrationWarning>
       <head>
-        <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossOrigin="" />
+        {/* Applies the saved theme class before hydration so light-mode users don't see a dark flash. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `try{var s=JSON.parse(localStorage.getItem('nexus.theme')||'null');if(s&&s.state&&s.state.theme==='light'){document.documentElement.classList.add('light');}}catch(e){}`,
+          }}
+        />
       </head>
-      <body className="bg-[#07090F] text-gray-100 min-h-screen antialiased select-none">
+      <body className="bg-[var(--bg-main)] text-[var(--chrome-text-100)] min-h-screen antialiased">
         <Providers>{children}</Providers>
       </body>
     </html>

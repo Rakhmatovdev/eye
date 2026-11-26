@@ -4,18 +4,18 @@ import axios from 'axios';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
+import DataBoundary from '../../../components/common/DataBoundary';
 import WorkspaceLayout from '../../../components/layout/WorkspaceLayout';
 import ReportModal from '../../../components/common/ReportModal';
-import { entitiesApi, sensorsApi, timelineApi, watchlistApi, reportsApi } from '../../../lib/api';
+import AttachmentsPanel from '../../../components/common/AttachmentsPanel';
+import { entitiesApi, sensorsApi, timelineApi, watchlistApi, reportsApi, attachmentsApi } from '../../../lib/api';
 import { apiErrorMessage } from '../../../lib/apiClient';
 import { useT, type TKey } from '../../../lib/i18n';
 import ConfirmDialog from '../../../components/common/ConfirmDialog';
-import { mockEntities, type Entity, type EntityType, type ClassificationLevel } from '../../../data/mockEntities';
-import { mockEvents } from '../../../data/mockEvents';
-import { mockDetections } from '../../../data/mockSensors';
+import { type Entity, type EntityType, type ClassificationLevel } from '../../../data/mockEntities';
 import {
   ArrowLeft, ShieldAlert, MapPin, ScanFace, Clock, Share2, Cctv, AlertCircle, Gauge,
-  Pencil, Trash2, Plus, X, Bookmark, BookmarkCheck, FileText,
+  Pencil, Trash2, Plus, X, Bookmark, BookmarkCheck, FileText, Paperclip, Sparkles,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -53,6 +53,11 @@ export default function EntityDossierPage() {
   const sightQ = useQuery({ queryKey: ['sightings', id], queryFn: () => sensorsApi.detections({ entityId: id }) });
   const evQ = useQuery({ queryKey: ['entity-events', id], queryFn: () => timelineApi.list({ entityId: id }) });
   const connQ = useQuery({ queryKey: ['entity-conn', id], queryFn: () => entitiesApi.expand(id) });
+  // Same queryKey AttachmentsPanel below uses — react-query dedupes this to
+  // one shared cache entry/request, so this is just reading the count for
+  // the section header, not a second network call.
+  const attachQ = useQuery({ queryKey: ['attachments', 'entities', id], queryFn: () => attachmentsApi.list('entities', id) });
+  const resolutionQ = useQuery({ queryKey: ['resolution-candidates', id], queryFn: () => entitiesApi.resolutionCandidates(id), retry: false });
   const watchlistQ = useQuery({ queryKey: ['watchlist'], queryFn: () => watchlistApi.list(), retry: false });
   const isWatchlisted = !!watchlistQ.data?.some((w) => w.entity_id === id);
 
@@ -77,11 +82,13 @@ export default function EntityDossierPage() {
     reportM.mutate();
   };
 
-  // Fallbacks so the dossier still renders if the API is unreachable.
-  const entity = entityQ.data ?? mockEntities.find((e) => e.id === id);
-  const sightings = sightQ.isError ? mockDetections.filter((d) => d.entity_id === id) : sightQ.data ?? [];
-  const events = evQ.isError ? mockEvents.filter((e) => e.entity_id === id) : evQ.data ?? [];
+  // Dossier content comes only from authenticated API results.
+  const entity = entityQ.data;
+  const sightings = sightQ.data ?? [];
+  const events = evQ.data ?? [];
   const connections = connQ.data;
+  const attachments = attachQ.data ?? [];
+  const candidates = resolutionQ.data ?? [];
 
   const updateM = useMutation({
     mutationFn: (input: { type: string; classification: string; properties: Record<string, unknown> }) =>
@@ -107,13 +114,16 @@ export default function EntityDossierPage() {
     },
   });
 
+  if (entityQ.isPending || entityQ.isError) {
+    return <WorkspaceLayout><DataBoundary queries={[entityQ]} /></WorkspaceLayout>;
+  }
   if (!entity) {
     return (
       <WorkspaceLayout>
-        <div className="h-full flex flex-col items-center justify-center text-gray-500 gap-3 font-mono">
+        <div className="h-full flex flex-col items-center justify-center text-[var(--chrome-text-500)] gap-3 font-mono">
           <AlertCircle size={30} />
-          <p className="text-sm">{t('entity_not_found_prefix')} <span className="text-gray-300">{id}</span> {t('entity_not_found_suffix')}</p>
-          <Link href="/search" className="text-cyan-400 text-xs hover:underline flex items-center gap-1">
+          <p className="text-sm">{t('entity_not_found_prefix')} <span className="text-[var(--chrome-text-300)]">{id}</span> {t('entity_not_found_suffix')}</p>
+          <Link href="/search" className="text-[var(--accent-cyan-soft)] text-xs hover:underline flex items-center gap-1">
             <ArrowLeft size={12} /> {t('entity_back_to_search')}
           </Link>
         </div>
@@ -130,21 +140,22 @@ export default function EntityDossierPage() {
 
   return (
     <WorkspaceLayout>
+      <DataBoundary queries={[sightQ, evQ, connQ, attachQ]}>
       <div className="p-6 md:p-8 space-y-6 h-full overflow-y-auto max-w-5xl mx-auto">
-        <Link href="/search" className="text-gray-500 text-xs hover:text-cyan-400 flex items-center gap-1 font-mono w-fit">
+        <Link href="/search" className="text-[var(--chrome-text-500)] text-xs hover:text-[var(--accent-cyan-soft)] flex items-center gap-1 font-mono w-fit">
           <ArrowLeft size={12} /> {t('entity_back')}
         </Link>
 
         {/* Identity header */}
-        <div className="bg-gradient-to-br from-[#0e1220] to-[#0c0e18] border border-gray-800/80 rounded-2xl p-6 flex items-start justify-between gap-4 flex-wrap">
+        <div className="header-gradient-card border border-[color-mix(in_srgb,var(--chrome-border-800)_80%,transparent)] rounded-2xl p-6 flex items-start justify-between gap-4 flex-wrap">
           <div className="flex items-start gap-4">
-            <div className="w-14 h-14 rounded-2xl bg-cyan-600/15 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
+            <div className="w-14 h-14 rounded-2xl bg-cyan-600/15 border border-cyan-500/30 flex items-center justify-center text-[var(--accent-cyan-soft)]">
               <ScanFace size={26} />
             </div>
             <div>
-              <div className="text-[9px] font-mono uppercase tracking-widest text-cyan-400">{entity.type}</div>
-              <h1 className="text-2xl font-bold text-white font-mono">{entity.name}</h1>
-              <div className="flex items-center gap-3 mt-1 text-xxs font-mono text-gray-500">
+              <div className="text-[9px] font-mono uppercase tracking-widest text-[var(--accent-cyan-soft)]">{entity.type}</div>
+              <h1 className="text-2xl font-bold text-[var(--chrome-text-white)] font-mono">{entity.name}</h1>
+              <div className="flex items-center gap-3 mt-1 text-xxs font-mono text-[var(--chrome-text-500)]">
                 <span className="flex items-center gap-1"><ShieldAlert size={11} /> {entity.classification}</span>
                 <span>{t('entity_id_prefix')} {entity.id}</span>
                 {entity.source && <span>{t('entity_src_prefix')} {entity.source}</span>}
@@ -160,8 +171,8 @@ export default function EntityDossierPage() {
                 disabled={isWatchlisted || addWatchlistM.isPending}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xxs font-bold font-mono transition-all border ${
                   isWatchlisted
-                    ? 'bg-amber-500/10 border-amber-500/30 text-amber-400 cursor-default'
-                    : 'bg-gray-800/60 hover:bg-gray-700/60 border-gray-700/60 text-gray-300 disabled:opacity-40'
+                    ? 'bg-amber-500/10 border-amber-500/30 text-[var(--accent-amber-soft)] cursor-default'
+                    : 'bg-[color-mix(in_srgb,var(--chrome-bg-800)_60%,transparent)] hover:bg-[color-mix(in_srgb,var(--chrome-bg-700)_60%,transparent)] border-[color-mix(in_srgb,var(--chrome-border-700)_60%,transparent)] text-[var(--chrome-text-300)] disabled:opacity-40'
                 }`}
               >
                 {isWatchlisted ? <BookmarkCheck size={11} /> : <Bookmark size={11} />}
@@ -170,28 +181,28 @@ export default function EntityDossierPage() {
               <button
                 data-testid="entity-report-btn"
                 onClick={handleOpenReport}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-800/60 hover:bg-gray-700/60 border border-gray-700/60 text-gray-300 rounded-xl text-xxs font-bold font-mono transition-all"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-[color-mix(in_srgb,var(--chrome-bg-800)_60%,transparent)] hover:bg-[color-mix(in_srgb,var(--chrome-bg-700)_60%,transparent)] border border-[color-mix(in_srgb,var(--chrome-border-700)_60%,transparent)] text-[var(--chrome-text-300)] rounded-xl text-xxs font-bold font-mono transition-all"
               >
                 <FileText size={11} /> {t('report_btn')}
               </button>
               <button
                 onClick={() => { setActionError(''); setShowEdit(true); }}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-800/60 hover:bg-gray-700/60 border border-gray-700/60 text-gray-300 rounded-xl text-xxs font-bold font-mono transition-all"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-[color-mix(in_srgb,var(--chrome-bg-800)_60%,transparent)] hover:bg-[color-mix(in_srgb,var(--chrome-bg-700)_60%,transparent)] border border-[color-mix(in_srgb,var(--chrome-border-700)_60%,transparent)] text-[var(--chrome-text-300)] rounded-xl text-xxs font-bold font-mono transition-all"
               >
                 <Pencil size={11} /> {t('common_edit')}
               </button>
               <button
                 onClick={() => { setActionError(''); setShowDeleteConfirm(true); }}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600/10 hover:bg-red-600/20 border border-red-500/30 text-red-400 rounded-xl text-xxs font-bold font-mono transition-all"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600/10 hover:bg-red-600/20 border border-red-500/30 text-[var(--accent-red-soft)] rounded-xl text-xxs font-bold font-mono transition-all"
               >
                 <Trash2 size={11} /> {t('common_delete')}
               </button>
             </div>
             {entity.risk_score != null && (
               <div className="text-right">
-                <div className="text-[9px] font-mono uppercase tracking-widest text-gray-500 flex items-center gap-1 justify-end"><Gauge size={11} /> {t('entity_risk_label')}</div>
+                <div className="text-[9px] font-mono uppercase tracking-widest text-[var(--chrome-text-500)] flex items-center gap-1 justify-end"><Gauge size={11} /> {t('entity_risk_label')}</div>
                 <div className={`text-3xl font-bold font-mono ${
-                  entity.risk_score >= 80 ? 'text-red-400' : entity.risk_score >= 50 ? 'text-amber-400' : 'text-emerald-400'
+                  entity.risk_score >= 80 ? 'text-[var(--accent-red-soft)]' : entity.risk_score >= 50 ? 'text-[var(--accent-amber-soft)]' : 'text-[var(--accent-emerald-soft)]'
                 }`}>{entity.risk_score}</div>
               </div>
             )}
@@ -199,7 +210,7 @@ export default function EntityDossierPage() {
         </div>
 
         {actionError && (
-          <div className="bg-red-500/10 border border-red-500/20 text-red-400 px-4 py-2.5 rounded-xl text-xs font-semibold font-mono">
+          <div className="bg-red-500/10 border border-red-500/20 text-[var(--accent-red-soft)] px-4 py-2.5 rounded-xl text-xs font-semibold font-mono">
             {actionError}
           </div>
         )}
@@ -209,15 +220,15 @@ export default function EntityDossierPage() {
           <Section title={t('entity_section_attributes')} icon={AlertCircle}>
             <div className="grid grid-cols-1 gap-1.5">
               {Object.entries(entity.properties).map(([k, v]) => (
-                <div key={k} className="flex justify-between text-xs font-mono border-b border-gray-800/40 py-1.5">
-                  <span className="text-gray-500 capitalize">{k.split('_').join(' ')}</span>
-                  <span className="text-gray-300 text-right max-w-[60%] truncate">{String(v)}</span>
+                <div key={k} className="flex justify-between text-xs font-mono border-b border-[color-mix(in_srgb,var(--chrome-border-800)_40%,transparent)] py-1.5">
+                  <span className="text-[var(--chrome-text-500)] capitalize">{k.split('_').join(' ')}</span>
+                  <span data-testid="entity-attr-value" className="text-[var(--chrome-text-300)] text-right max-w-[60%] truncate">{String(v)}</span>
                 </div>
               ))}
               {entity.geo && (
                 <div className="flex justify-between text-xs font-mono py-1.5">
-                  <span className="text-gray-500 flex items-center gap-1"><MapPin size={11} /> {t('entity_location_label')}</span>
-                  <span className="text-gray-300">{entity.geo.lat.toFixed(4)}, {entity.geo.lng.toFixed(4)}</span>
+                  <span className="text-[var(--chrome-text-500)] flex items-center gap-1"><MapPin size={11} /> {t('entity_location_label')}</span>
+                  <span className="text-[var(--chrome-text-300)]">{entity.geo.lat.toFixed(4)}, {entity.geo.lng.toFixed(4)}</span>
                 </div>
               )}
             </div>
@@ -230,19 +241,19 @@ export default function EntityDossierPage() {
             ) : (
               <div className="space-y-2">
                 {sightings.map((d) => (
-                  <div key={d.id} className="bg-[#0e1220]/60 border border-gray-800/50 rounded-xl p-3 flex items-center justify-between gap-2">
+                  <div key={d.id} className="bg-[color-mix(in_srgb,var(--bg-card)_60%,transparent)] border border-[color-mix(in_srgb,var(--chrome-border-800)_50%,transparent)] rounded-xl p-3 flex items-center justify-between gap-2">
                     <div className="min-w-0">
-                      <div className="text-xs font-mono text-gray-300 truncate flex items-center gap-1">
-                        <Cctv size={11} className="text-cyan-400" /> {d.sensor_name}
+                      <div className="text-xs font-mono text-[var(--chrome-text-300)] truncate flex items-center gap-1">
+                        <Cctv size={11} className="text-[var(--accent-cyan-soft)]" /> {d.sensor_name}
                       </div>
-                      <div className="text-xxs font-mono text-gray-500 mt-0.5 flex items-center gap-1">
+                      <div className="text-xxs font-mono text-[var(--chrome-text-500)] mt-0.5 flex items-center gap-1">
                         <MapPin size={10} /> {d.area} · {d.kind.replace('_', ' ')}
                       </div>
                     </div>
                     <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border shrink-0 ${
-                      d.confidence >= 0.85 ? 'text-emerald-400 border-emerald-500/30 bg-emerald-500/10' :
-                      d.confidence >= 0.7 ? 'text-amber-400 border-amber-500/30 bg-amber-500/10' :
-                      'text-gray-400 border-gray-600/30 bg-gray-500/10'
+                      d.confidence >= 0.85 ? 'text-[var(--accent-emerald-soft)] border-emerald-500/30 bg-emerald-500/10' :
+                      d.confidence >= 0.7 ? 'text-[var(--accent-amber-soft)] border-amber-500/30 bg-amber-500/10' :
+                      'text-[var(--chrome-text-400)] border-[color-mix(in_srgb,var(--chrome-border-600)_30%,transparent)] bg-[color-mix(in_srgb,var(--chrome-bg-500)_10%,transparent)]'
                     }`}>{(d.confidence * 100).toFixed(0)}%</span>
                   </div>
                 ))}
@@ -258,9 +269,9 @@ export default function EntityDossierPage() {
               <div className="flex flex-wrap gap-2">
                 {neighbors.map((n) => (
                   <Link key={n.id + n.rel} href={`/entity/${n.id}`}
-                    className="bg-[#0e1220]/60 border border-gray-800/50 hover:border-cyan-500/40 rounded-xl px-3 py-2 text-xs font-mono transition-all">
-                    <span className="text-gray-200">{n.name}</span>
-                    <span className="text-gray-600 ml-2">{n.rel.replace('_', ' ')}</span>
+                    className="bg-[color-mix(in_srgb,var(--bg-card)_60%,transparent)] border border-[color-mix(in_srgb,var(--chrome-border-800)_50%,transparent)] hover:border-cyan-500/40 rounded-xl px-3 py-2 text-xs font-mono transition-all">
+                    <span className="text-[var(--chrome-text-200)]">{n.name}</span>
+                    <span className="text-[var(--chrome-text-600)] ml-2">{n.rel.replace('_', ' ')}</span>
                   </Link>
                 ))}
               </div>
@@ -274,13 +285,61 @@ export default function EntityDossierPage() {
             ) : (
               <div className="space-y-2">
                 {[...events].sort((a, b) => +new Date(b.timestamp) - +new Date(a.timestamp)).map((ev) => (
-                  <div key={ev.id} className="bg-[#0e1220]/60 border border-gray-800/50 rounded-xl p-3">
+                  <div key={ev.id} className="bg-[color-mix(in_srgb,var(--bg-card)_60%,transparent)] border border-[color-mix(in_srgb,var(--chrome-border-800)_50%,transparent)] rounded-xl p-3">
                     <div className="flex items-center justify-between">
-                      <span className="text-[9px] font-mono uppercase tracking-widest text-cyan-400">{ev.type}</span>
-                      <span className="text-xxs font-mono text-gray-600">{new Date(ev.timestamp).toLocaleDateString()}</span>
+                      <span className="text-[9px] font-mono uppercase tracking-widest text-[var(--accent-cyan-soft)]">{ev.type}</span>
+                      <span className="text-xxs font-mono text-[var(--chrome-text-600)]">{new Date(ev.timestamp).toLocaleDateString()}</span>
                     </div>
-                    <div className="text-xs font-mono text-gray-200 mt-1">{ev.title}</div>
-                    {ev.location && <div className="text-xxs font-mono text-gray-500 mt-0.5 flex items-center gap-1"><MapPin size={10} /> {ev.location}</div>}
+                    <div className="text-xs font-mono text-[var(--chrome-text-200)] mt-1">{ev.title}</div>
+                    {ev.location && <div className="text-xxs font-mono text-[var(--chrome-text-500)] mt-0.5 flex items-center gap-1"><MapPin size={10} /> {ev.location}</div>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </Section>
+
+          {/* Attachments */}
+          <Section title={`${t('entity_section_attachments')} (${attachments.length})`} icon={Paperclip}>
+            <AttachmentsPanel subjectType="entities" subjectId={id} />
+          </Section>
+
+          {/* Entity Resolution / Duplicate Candidates */}
+          <Section title={`${t('entity_section_resolution')} (${candidates.length})`} icon={Sparkles}>
+            {candidates.length === 0 ? (
+              <Empty text={t('entity_empty_resolution')} />
+            ) : (
+              <div className="space-y-3">
+                {candidates.map((cand) => (
+                  <div key={cand.candidate_id} className="bg-[color-mix(in_srgb,var(--bg-card)_60%,transparent)] border border-[color-mix(in_srgb,var(--chrome-border-800)_50%,transparent)] rounded-xl p-3.5 space-y-2">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <div>
+                        <Link href={`/entity/${cand.candidate_id}`} className="text-xs font-bold font-mono text-[var(--accent-cyan-soft)] hover:underline">
+                          {cand.candidate_label}
+                        </Link>
+                        <span className="text-[10px] font-mono text-[var(--chrome-text-500)] ml-2 uppercase">({cand.candidate_type})</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className={`text-[10px] font-mono px-2 py-0.5 rounded border uppercase tracking-wider ${
+                          cand.confidence >= 0.85 ? 'text-[var(--accent-emerald-soft)] border-emerald-500/40 bg-emerald-500/10' :
+                          'text-[var(--accent-amber-soft)] border-amber-500/40 bg-amber-500/10'
+                        }`}>
+                          {(cand.confidence * 100).toFixed(0)}% {t('entity_match_confidence')}
+                        </span>
+                        <span className="text-[9px] font-mono text-[var(--chrome-text-400)] px-1.5 py-0.5 rounded bg-[var(--bg-main)] border border-[var(--chrome-border-800)]">
+                          {cand.recommendation === 'auto_merge' ? t('entity_resolution_auto_merge') : t('entity_resolution_manual')}
+                        </span>
+                      </div>
+                    </div>
+                    {cand.factors && cand.factors.length > 0 && (
+                      <div className="text-xxs font-mono space-y-1 bg-[var(--bg-main)] p-2 rounded-lg border border-[var(--chrome-border-800)]">
+                        {cand.factors.map((f, idx) => (
+                          <div key={idx} className="flex justify-between text-[var(--chrome-text-400)]">
+                            <span className="capitalize">{f.feature.replace('_', ' ')}:</span>
+                            <span className="text-[var(--chrome-text-200)] font-semibold">{f.matched_value || f.status}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -318,8 +377,11 @@ export default function EntityDossierPage() {
           isLoading={reportM.isPending}
           isError={reportM.isError}
           onClose={() => setShowReport(false)}
+          onDownloadPdf={() => reportsApi.entityPdf(entity.id)}
+          onDownloadCsv={() => reportsApi.entityCsv(entity.id)}
         />
       )}
+    </DataBoundary>
     </WorkspaceLayout>
   );
 }
@@ -384,25 +446,25 @@ function EditEntityModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-      <div className="w-full max-w-lg bg-[#0c0e17] border border-gray-800 rounded-2xl p-6 space-y-4 max-h-[85vh] overflow-y-auto">
-        <h2 className="text-sm font-bold font-mono uppercase tracking-wide text-white">{t('common_edit')} {t('entity_edit_modal_suffix')}</h2>
+      <div className="w-full max-w-lg bg-[var(--bg-card)] border border-[var(--chrome-border-800)] rounded-2xl p-6 space-y-4 max-h-[85vh] overflow-y-auto">
+        <h2 className="text-sm font-bold font-mono uppercase tracking-wide text-[var(--chrome-text-white)]">{t('common_edit')} {t('entity_edit_modal_suffix')}</h2>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-xxs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">{t('entity_field_label')}</label>
+            <label className="block text-xxs font-semibold text-[var(--chrome-text-500)] uppercase tracking-wider mb-1.5">{t('entity_field_label')}</label>
             <input
               value={label}
               onChange={(e) => setLabel(e.target.value)}
               required
-              className="w-full px-3 py-2 bg-gray-950 border border-gray-800 rounded-xl text-xs text-gray-200 focus:outline-none focus:border-cyan-500/50"
+              className="w-full px-3 py-2 bg-[var(--bg-main)] border border-[var(--chrome-border-800)] rounded-xl text-xs text-[var(--chrome-text-200)] focus:outline-none focus:border-cyan-500/50"
             />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xxs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">{t('entity_field_type')}</label>
+              <label className="block text-xxs font-semibold text-[var(--chrome-text-500)] uppercase tracking-wider mb-1.5">{t('entity_field_type')}</label>
               <select
                 value={type}
                 onChange={(e) => setType(e.target.value)}
-                className="w-full px-3 py-2 bg-gray-950 border border-gray-800 rounded-xl text-xs text-gray-200 focus:outline-none"
+                className="w-full px-3 py-2 bg-[var(--bg-main)] border border-[var(--chrome-border-800)] rounded-xl text-xs text-[var(--chrome-text-200)] focus:outline-none"
               >
                 {ENTITY_TYPES.map((tp) => (
                   <option key={tp} value={tp}>{t(ENTITY_TYPE_KEY[tp])}</option>
@@ -410,11 +472,11 @@ function EditEntityModal({
               </select>
             </div>
             <div>
-              <label className="block text-xxs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">{t('entity_field_classification')}</label>
+              <label className="block text-xxs font-semibold text-[var(--chrome-text-500)] uppercase tracking-wider mb-1.5">{t('entity_field_classification')}</label>
               <select
                 value={classification}
                 onChange={(e) => setClassification(e.target.value)}
-                className="w-full px-3 py-2 bg-gray-950 border border-gray-800 rounded-xl text-xs text-gray-200 focus:outline-none"
+                className="w-full px-3 py-2 bg-[var(--bg-main)] border border-[var(--chrome-border-800)] rounded-xl text-xs text-[var(--chrome-text-200)] focus:outline-none"
               >
                 {CLASSIFICATIONS.map((c) => (
                   <option key={c} value={c}>{t(CLASSIFICATION_KEY[c])}</option>
@@ -425,8 +487,8 @@ function EditEntityModal({
 
           <div>
             <div className="flex items-center justify-between mb-1.5">
-              <label className="block text-xxs font-semibold text-gray-500 uppercase tracking-wider">{t('entity_field_properties')}</label>
-              <button type="button" onClick={addRow} className="flex items-center gap-1 text-[10px] text-cyan-400 hover:underline">
+              <label className="block text-xxs font-semibold text-[var(--chrome-text-500)] uppercase tracking-wider">{t('entity_field_properties')}</label>
+              <button type="button" onClick={addRow} className="flex items-center gap-1 text-[10px] text-[var(--accent-cyan-soft)] hover:underline">
                 <Plus size={11} /> {t('entity_add_btn')}
               </button>
             </div>
@@ -437,20 +499,20 @@ function EditEntityModal({
                     value={row.key}
                     onChange={(e) => updateRow(i, { key: e.target.value })}
                     placeholder={t('entity_key_placeholder')}
-                    className="w-1/3 px-2 py-1.5 bg-gray-950 border border-gray-800 rounded-lg text-xxs text-gray-300 focus:outline-none"
+                    className="w-1/3 px-2 py-1.5 bg-[var(--bg-main)] border border-[var(--chrome-border-800)] rounded-lg text-xxs text-[var(--chrome-text-300)] focus:outline-none"
                   />
                   <input
                     value={row.value}
                     onChange={(e) => updateRow(i, { value: e.target.value })}
                     placeholder={t('entity_value_placeholder')}
-                    className="flex-1 px-2 py-1.5 bg-gray-950 border border-gray-800 rounded-lg text-xxs text-gray-300 focus:outline-none"
+                    className="flex-1 px-2 py-1.5 bg-[var(--bg-main)] border border-[var(--chrome-border-800)] rounded-lg text-xxs text-[var(--chrome-text-300)] focus:outline-none"
                   />
-                  <button type="button" onClick={() => removeRow(i)} className="p-1.5 text-gray-600 hover:text-red-400">
+                  <button type="button" onClick={() => removeRow(i)} className="p-1.5 text-[var(--chrome-text-600)] hover:text-[var(--accent-red-soft)]">
                     <X size={13} />
                   </button>
                 </div>
               ))}
-              {rows.length === 0 && <p className="text-xxs text-gray-600 font-mono">{t('entity_no_properties')}</p>}
+              {rows.length === 0 && <p className="text-xxs text-[var(--chrome-text-600)] font-mono">{t('entity_no_properties')}</p>}
             </div>
           </div>
 
@@ -465,7 +527,7 @@ function EditEntityModal({
             <button
               type="button"
               onClick={onCancel}
-              className="px-4 py-2 text-gray-500 hover:text-gray-300 rounded-xl text-xs font-semibold font-mono transition-all"
+              className="px-4 py-2 text-[var(--chrome-text-500)] hover:text-[var(--chrome-text-300)] rounded-xl text-xs font-semibold font-mono transition-all"
             >
               {t('common_cancel')}
             </button>
@@ -478,9 +540,9 @@ function EditEntityModal({
 
 function Section({ title, icon: Icon, children }: { title: string; icon: LucideIcon; children: React.ReactNode }) {
   return (
-    <div className="bg-[#0c0e17]/50 border border-gray-800/60 rounded-2xl p-5">
-      <h2 className="text-xs font-bold font-mono uppercase tracking-wider text-gray-300 flex items-center gap-2 mb-3">
-        <Icon size={14} className="text-cyan-400" /> {title}
+    <div className="bg-[color-mix(in_srgb,var(--bg-card)_50%,transparent)] border border-[color-mix(in_srgb,var(--chrome-border-800)_60%,transparent)] rounded-2xl p-5">
+      <h2 className="text-xs font-bold font-mono uppercase tracking-wider text-[var(--chrome-text-300)] flex items-center gap-2 mb-3">
+        <Icon size={14} className="text-[var(--accent-cyan-soft)]" /> {title}
       </h2>
       {children}
     </div>
@@ -488,5 +550,5 @@ function Section({ title, icon: Icon, children }: { title: string; icon: LucideI
 }
 
 function Empty({ text }: { text: string }) {
-  return <p className="text-xs text-gray-600 font-mono py-4 text-center">{text}</p>;
+  return <p className="text-xs text-[var(--chrome-text-600)] font-mono py-4 text-center">{text}</p>;
 }
